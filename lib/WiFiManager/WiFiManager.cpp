@@ -20,7 +20,7 @@ bool WiFiManager::connectSTA(const String& ssid, const String& password, uint32_
 }
 
 bool WiFiManager::startAP(const String& ssid, const String& password) {
-    WiFi.mode(WIFI_AP);
+    WiFi.mode(WIFI_AP_STA);  // AP+STA allows scanNetworks() from setup portal
     bool ok = WiFi.softAP(ssid.c_str(), password.c_str());
     if (ok) {
         _apMode = true;

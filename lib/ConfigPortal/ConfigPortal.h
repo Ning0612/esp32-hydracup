@@ -17,7 +17,11 @@ private:
     void _handleRoot();
     void _handleStatus();
     void _handleConfig();
+    void _handleWifiScan();
     void _handleReboot();
+
+    static constexpr uint32_t SCAN_COOLDOWN_MS = 5000;
+    uint32_t _lastScanMs = 0;
 
     static const char* _setupPageHtml;
 };
