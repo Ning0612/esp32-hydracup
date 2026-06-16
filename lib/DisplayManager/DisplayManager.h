@@ -15,7 +15,7 @@ public:
 
     // Mode screens
     void showWifiConnecting(const String& ssid);
-    void showAPMode(const String& apSsid, const String& ip);
+    void showAPMode(const String& apSsid, const String& apPassword, const String& ip);
 
     void showNormalMode(float weightG, bool stable,
                         float todayMl, uint32_t goalMl, uint32_t drinkCount,

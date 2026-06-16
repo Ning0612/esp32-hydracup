@@ -115,7 +115,7 @@ void setup() {
         appState.ipAddress = wifiManager.getAPIP();
         if (apOk) {
             configPortal.begin(configManager, appState);
-            displayManager.showAPMode(appConfig.apSsid, appState.ipAddress);
+            displayManager.showAPMode(appConfig.apSsid, appConfig.apPassword, appState.ipAddress);
             Serial.printf("[INFO] AP Mode  SSID: %s  IP: %s\n",
                           appConfig.apSsid.c_str(), appState.ipAddress.c_str());
         } else {
