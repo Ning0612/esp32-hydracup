@@ -24,6 +24,11 @@ void TimeManager::update() {
     }
 }
 
+bool TimeManager::getLocalTm(struct tm& t) const {
+    if (!_initialized) return false;
+    return getLocalTime(&t, 0);
+}
+
 bool TimeManager::isSynced() const {
     if (!_initialized) return false;
     struct tm tm;

@@ -11,6 +11,7 @@ static fs::LittleFSFS LogFS;
 #include "ConfigPortal.h"
 #include "DashboardServer.h"
 #include "DisplayManager.h"
+#include "DailySummaryManager.h"
 #include "DiscordNotifier.h"
 #include "DrinkDetector.h"
 #include "EventLogger.h"
@@ -34,8 +35,9 @@ static DashboardServer  dashboardServer;
 static DrinkDetector    drinkDetector;
 static ReminderManager  reminderManager;
 static TimeManager      timeManager;
-static DiscordNotifier  discordNotifier;
-static EventLogger      eventLogger;
+static DiscordNotifier     discordNotifier;
+static EventLogger         eventLogger;
+static DailySummaryManager dailySummaryManager;
 
 static void initFilesystem() {
     if (LittleFS.begin(false, "/webfs", 5, "webfs")) {
@@ -123,6 +125,7 @@ void setup() {
         drinkDetector.setTimeManager(&timeManager);
         drinkDetector.setDiscordNotifier(&discordNotifier);
         drinkDetector.setEventLogger(&eventLogger);
+        dailySummaryManager.init(discordNotifier, drinkDetector, timeManager, appConfig);
         Serial.printf("[INFO] Normal Mode  IP: %s\n", appState.ipAddress.c_str());
     } else {
         const bool apOk = wifiManager.startAP(appConfig.apSsid, appConfig.apPassword);
@@ -167,6 +170,7 @@ void loop() {
         timeManager.update();
         appState.ntpSynced = timeManager.isSynced();
         discordNotifier.update();
+        dailySummaryManager.update();
 
         displayManager.showNormalMode(
             appState.weightGrams,    scaleManager.isStable(),

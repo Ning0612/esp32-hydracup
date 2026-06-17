@@ -24,6 +24,7 @@ public:
     float    getTodayTotalMl()    const { return _todayTotalMl; }
     float    getLastDrinkMl()     const { return _lastDrinkMl; }
     uint32_t getDrinkCountToday() const { return _drinkCount; }
+    void     resetDailyCounters();
 
 private:
     ScaleManager*     _scale      = nullptr;

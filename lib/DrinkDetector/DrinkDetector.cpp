@@ -105,6 +105,18 @@ void DrinkDetector::update() {
     _state->drinkCountToday = _drinkCount;
 }
 
+void DrinkDetector::resetDailyCounters() {
+    _todayTotalMl = 0.0f;
+    _lastDrinkMl  = 0.0f;
+    _drinkCount   = 0;
+    if (_state) {
+        _state->todayTotalMl    = 0.0f;
+        _state->lastDrinkMl     = 0.0f;
+        _state->drinkCountToday = 0;
+    }
+    Serial.println("[Drink] Daily counters reset");
+}
+
 void DrinkDetector::_transitionTo(CupState next) {
     if (_state->cupState != next) {
         Serial.printf("[CupState] %s → %s\n",

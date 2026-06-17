@@ -7,6 +7,7 @@ public:
     void   init(const AppConfig& cfg);
     void   update();
     bool   isSynced() const;
+    bool   getLocalTm(struct tm& t) const;
     String getISOTimestamp() const;
     String getYearMonth() const;
 
