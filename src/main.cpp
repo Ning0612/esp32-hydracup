@@ -86,6 +86,7 @@ void setup() {
 
     reminderManager.init(appConfig.reminderIntervalMin, appConfig.reminderEnabled);
     reminderManager.setBuzzer(&buzzerController);
+    reminderManager.setAppState(&appState);
     drinkDetector.init(scaleManager, appState, appConfig, reminderManager, buzzerController);
 
     // WiFi mode selection

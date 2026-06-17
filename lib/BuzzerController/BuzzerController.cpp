@@ -18,12 +18,14 @@ void BuzzerController::setFrequency(uint32_t hz) {
 
 void BuzzerController::setEnabled(bool en) {
     _enabled = en;
-    if (!en) {
-        _stopBeep();
-        _queueLen = 0;
-        _queueIdx = 0;
-        _inGap    = false;
-    }
+    if (!en) stop();
+}
+
+void BuzzerController::stop() {
+    _stopBeep();
+    _queueLen = 0;
+    _queueIdx = 0;
+    _inGap    = false;
 }
 
 void BuzzerController::play(BeepPattern pattern) {
@@ -51,10 +53,17 @@ void BuzzerController::play(BeepPattern pattern) {
             break;
 
         case BeepPattern::WIFI_CONNECTED:
-        case BeepPattern::REMINDER:
             _queue[0] = { on, gap };
             _queue[1] = { on, 0 };
             _queueLen = 2;
+            break;
+
+        case BeepPattern::REMINDER:
+            _queue[0] = { on, gap };
+            _queue[1] = { on, 500 };
+            _queue[2] = { on, gap };
+            _queue[3] = { on, 0 };
+            _queueLen = 4;
             break;
 
         case BeepPattern::ERROR_BEEP:

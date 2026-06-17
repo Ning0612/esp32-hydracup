@@ -21,6 +21,7 @@ public:
     void setVolume(uint8_t pct)    { _volumePct = constrain(pct, 0, 100); }
     void setDuration(uint32_t ms)  { _durationMs = ms; }
     void setEnabled(bool en);
+    void stop();
     bool isPlaying() const         { return _queueIdx < _queueLen; }
 
 private:
