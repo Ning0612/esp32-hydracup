@@ -54,7 +54,7 @@ void DiscordNotifier::notifyOnline(const String& ipAddress) {
     }
 }
 
-void DiscordNotifier::notifyDrink(float amountMl, float totalMl, const String& timestamp) {
+void DiscordNotifier::notifyDrink(float amountMl, float totalMl, uint32_t drinkCount) {
     if (!_cfg || _cfg->discordWebhookUrl.isEmpty()) {
         Serial.println("[Discord] notifyDrink skipped: webhook URL not configured");
         return;
@@ -85,12 +85,48 @@ void DiscordNotifier::notifyDrink(float amountMl, float totalMl, const String& t
     strncpy(p->webhookUrl, _cfg->discordWebhookUrl.c_str(), sizeof(p->webhookUrl) - 1);
     p->webhookUrl[sizeof(p->webhookUrl) - 1] = '\0';
 
+    const uint32_t goalMl = _cfg->dailyGoalMl > 0 ? _cfg->dailyGoalMl : 2000;
+    const float    pct    = (totalMl / (float)goalMl) * 100.0f;
+    const float    remain = totalMl >= (float)goalMl ? 0.0f : ((float)goalMl - totalMl);
+
+    uint32_t    color;
+    const char* filledEmoji;
+    if (pct < 50.0f) {
+        color = 15158332; filledEmoji = "🟥";
+    } else if (pct < 80.0f) {
+        color = 15132194; filledEmoji = "🟨";
+    } else if (pct < 100.0f) {
+        color = 3447003;  filledEmoji = "🟦";
+    } else {
+        color = 3066993;  filledEmoji = "🟩";
+    }
+
+    // Clamp to [0,10]: guards against negative totalMl or NaN (NaN comparisons are false)
+    const int filled = (pct != pct || pct <= 0.0f) ? 0 : (pct >= 100.0f ? 10 : (int)(pct / 10.0f));
+    char bar[60];
+    bar[0] = '\0';
+    for (int i = 0;      i < filled; i++) strcat(bar, filledEmoji);
+    for (int i = filled; i < 10;     i++) strcat(bar, "⬜");
+
+    char lastLine[48];
+    if (remain <= 0.0f) {
+        snprintf(lastLine, sizeof(lastLine), "第 %u 杯，已達標", (unsigned)drinkCount);
+    } else {
+        snprintf(lastLine, sizeof(lastLine), "第 %u 杯，還差 %.0f ml 達標", (unsigned)drinkCount, remain);
+    }
+
     const int written = snprintf(p->body, sizeof(p->body),
-             "{\"content\":\"Drank %.0f ml | Today total %.0f ml\","
-             "\"embeds\":[{\"color\":3066993,\"description\":\"Time: %s\"}]}",
-             amountMl, totalMl, timestamp.c_str());
+        "{\"embeds\":[{\"title\":\"本次 +%.0f ml\","
+        "\"description\":\"今日累計\\n%.0f ml / %u ml\\n\\n%s  %.0f%%\\n%s\","
+        "\"color\":%u}]}",
+        amountMl, totalMl, (unsigned)goalMl,
+        bar, pct, lastLine,
+        (unsigned)color);
     if (written >= (int)sizeof(p->body)) {
-        Serial.println("[Discord] notifyDrink: body truncated, JSON may be invalid");
+        Serial.println("[Discord] notifyDrink: body truncated, aborting POST");
+        delete p;
+        _taskRunning.store(false);
+        return;
     }
 
     p->lastOkPtr      = &_state->webhookLastOk;

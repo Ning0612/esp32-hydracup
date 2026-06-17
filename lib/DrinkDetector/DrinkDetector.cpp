@@ -124,7 +124,7 @@ void DrinkDetector::_onDrinkConfirmed(float amountMl) {
     _transitionTo(CupState::DRINK_CONFIRMED);
 
     const String ts = _time ? _time->getISOTimestamp() : String("");
-    if (_discord)  _discord->notifyDrink(amountMl, _todayTotalMl, ts);
+    if (_discord)  _discord->notifyDrink(amountMl, _todayTotalMl, _drinkCount);
     if (_eventLog) _eventLog->logDrink(ts, amountMl, _todayTotalMl, _time);
 }
 

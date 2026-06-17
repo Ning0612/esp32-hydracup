@@ -8,7 +8,7 @@ class DiscordNotifier {
 public:
     void init(AppState& state, const AppConfig& cfg);
     void notifyOnline(const String& ipAddress);
-    void notifyDrink(float amountMl, float totalMl, const String& timestamp);
+    void notifyDrink(float amountMl, float totalMl, uint32_t drinkCount);
     void update();
 
 private:
