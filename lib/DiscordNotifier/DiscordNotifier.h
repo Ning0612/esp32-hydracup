@@ -21,7 +21,8 @@ private:
 
     static void _sendTask(void* param);
 
-    AppState*              _state       = nullptr;
-    const AppConfig*       _cfg         = nullptr;
+    AppState*              _state             = nullptr;
+    const AppConfig*       _cfg               = nullptr;
     std::atomic<bool>      _taskRunning{false};
+    std::atomic<bool>      _onlineTaskRunning{false};
 };
