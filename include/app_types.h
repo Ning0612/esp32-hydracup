@@ -1,5 +1,6 @@
 #pragma once
 #include <Arduino.h>
+#include "config.h"
 
 enum class AppMode : uint8_t {
     BOOT,
@@ -42,7 +43,7 @@ struct AppConfig {
     long     tareOffset               = 0;
     float    cupPresentThresholdGram  = 80.0f;
     float    stableToleranceGram      = 3.0f;
-    uint32_t stableDurationMs         = 1500;
+    uint32_t stableDurationMs         = DEFAULT_STABLE_DURATION_MS;
     float    minDrinkDeltaMl          = 20.0f;
     float    maxDrinkDeltaMl          = 500.0f;
 

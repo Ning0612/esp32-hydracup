@@ -33,7 +33,7 @@
 // Drink detection defaults
 #define DEFAULT_CUP_THRESHOLD_G    80.0f
 #define DEFAULT_STABLE_TOLERANCE_G  3.0f
-#define DEFAULT_STABLE_DURATION_MS 1500
+#define DEFAULT_STABLE_DURATION_MS 3000
 #define DEFAULT_MIN_DRINK_ML        20.0f
 #define DEFAULT_MAX_DRINK_ML       500.0f
 

@@ -97,7 +97,7 @@ void ScaleManager::_recalcWeight() {
 }
 
 void ScaleManager::_updateStability() {
-    if (fabsf(_weightGrams - _stableRefGrams) <= _stableToleranceG) {
+    if (fabsf(_weightGrams - _stableRefGrams) < _stableToleranceG) {
         if (!_stable && (millis() - _stableStartMs >= _stableDurationMs)) {
             _stable       = true;
             _stableWeight = _weightGrams;

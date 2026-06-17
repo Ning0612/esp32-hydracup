@@ -3,6 +3,8 @@
 #include "EventLogger.h"
 #include "TimeManager.h"
 
+static constexpr uint32_t DRINK_LIFT_TIMEOUT_MS = 120000;
+
 void DrinkDetector::init(ScaleManager& scale, AppState& state, const AppConfig& cfg,
                          ReminderManager& reminder, BuzzerController& buzzer) {
     _scale    = &scale;
@@ -24,6 +26,9 @@ void DrinkDetector::update() {
     switch (current) {
 
         case CupState::NO_CUP:
+            if (_cupLifted && (millis() - _cupLiftedAtMs > DRINK_LIFT_TIMEOUT_MS)) {
+                _cupLifted = false;
+            }
             if (weight >= threshold) {
                 _transitionTo(CupState::CUP_UNSTABLE);
             }
@@ -33,13 +38,30 @@ void DrinkDetector::update() {
             if (weight < threshold) {
                 _transitionTo(CupState::NO_CUP);
             } else if (_scale->isStable()) {
-                _prevStableWeight = _scale->getStableWeightGrams();
-                _transitionTo(CupState::CUP_STABLE);
+                const float newStable = _scale->getStableWeightGrams();
+                if (_cupLifted) {
+                    _cupLifted = false;
+                    const float prevRef = _prevStableWeight;
+                    const float delta   = prevRef - newStable;
+                    _prevStableWeight   = newStable;
+                    if (delta >= _cfg->minDrinkDeltaMl && delta <= _cfg->maxDrinkDeltaMl) {
+                        _onDrinkConfirmed(delta);
+                    } else if ((newStable - prevRef) >= _cfg->minDrinkDeltaMl) {
+                        _onRefillDetected(newStable - prevRef);
+                    } else {
+                        _transitionTo(CupState::CUP_STABLE);
+                    }
+                } else {
+                    _prevStableWeight = newStable;
+                    _transitionTo(CupState::CUP_STABLE);
+                }
             }
             break;
 
         case CupState::CUP_STABLE:
             if (weight < threshold) {
+                _cupLifted     = true;
+                _cupLiftedAtMs = millis();
                 _transitionTo(CupState::NO_CUP);
             } else if (!_scale->isStable()) {
                 _transitionTo(CupState::POSSIBLE_DRINK);
@@ -48,6 +70,8 @@ void DrinkDetector::update() {
 
         case CupState::POSSIBLE_DRINK:
             if (weight < threshold) {
+                _cupLifted     = true;
+                _cupLiftedAtMs = millis();
                 _transitionTo(CupState::NO_CUP);
             } else if (_scale->isStable()) {
                 const float currentStable = _scale->getStableWeightGrams();

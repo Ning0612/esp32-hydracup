@@ -35,10 +35,12 @@ private:
     EventLogger*      _eventLog   = nullptr;
     TimeManager*      _time       = nullptr;
 
-    float    _prevStableWeight = 0.0f;
-    float    _todayTotalMl     = 0.0f;
-    float    _lastDrinkMl      = 0.0f;
-    uint32_t _drinkCount       = 0;
+    float    _prevStableWeight      = 0.0f;
+    float    _todayTotalMl          = 0.0f;
+    float    _lastDrinkMl           = 0.0f;
+    uint32_t _drinkCount            = 0;
+    bool     _cupLifted             = false;
+    uint32_t _cupLiftedAtMs        = 0;
 
     void _transitionTo(CupState next);
     void _onDrinkConfirmed(float amountMl);
