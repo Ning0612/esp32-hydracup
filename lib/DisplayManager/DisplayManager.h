@@ -27,7 +27,7 @@ public:
     bool isAvailable() const { return _available; }
 
 private:
-    static constexpr uint8_t  PAGE_COUNT       = 4;
+    static constexpr uint8_t  PAGE_COUNT       = 2;
     static constexpr uint32_t PAGE_INTERVAL_MS = 4000;
 
     Adafruit_SSD1306 _display{OLED_SCREEN_WIDTH, OLED_SCREEN_HEIGHT, &Wire, OLED_RESET_PIN};
@@ -36,9 +36,8 @@ private:
     uint8_t  _page         = 0;
     uint32_t _pageChangedMs = 0;
 
-    void _drawPage0Weight(float weightG, bool stable);
-    void _drawPage1Hydration(float todayMl, uint32_t goalMl, uint32_t drinkCount);
-    void _drawPage2Reminder(float lastDrinkMl, uint32_t nextRemSec);
-    void _drawPage3System(bool wifiOk, const String& ip, bool ntpSynced);
-    void _drawPageIndicator(uint8_t page);
+    void _centerPrint(const char* text, int16_t y);
+    void _drawPage0Weight(float weightG, const String& ip);
+    void _drawPage1Hydration(float todayMl, uint32_t goalMl, uint32_t drinkCount,
+                             float lastDrinkMl, uint32_t nextRemSec);
 };
