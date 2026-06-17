@@ -19,6 +19,7 @@ bool DisplayManager::init() {
 
 void DisplayManager::showBootScreen() {
     if (!_available) return;
+    _display.ssd1306_command(SSD1306_DISPLAYON);
     _display.clearDisplay();
     _display.setTextSize(1);
     _display.setTextColor(SSD1306_WHITE);
@@ -32,6 +33,7 @@ void DisplayManager::showBootScreen() {
 
 void DisplayManager::showError(const char* msg) {
     if (!_available) return;
+    _display.ssd1306_command(SSD1306_DISPLAYON);
     _display.clearDisplay();
     _display.setTextSize(1);
     _display.setTextColor(SSD1306_WHITE);
@@ -48,6 +50,7 @@ void DisplayManager::showError(const char* msg) {
 
 void DisplayManager::showWifiConnecting(const String& ssid) {
     if (!_available) return;
+    _display.ssd1306_command(SSD1306_DISPLAYON);
     _display.clearDisplay();
     _display.setTextSize(1);
     _display.setTextColor(SSD1306_WHITE);
@@ -62,6 +65,7 @@ void DisplayManager::showWifiConnecting(const String& ssid) {
 
 void DisplayManager::showAPMode(const String& apSsid, const String& apPassword, const String& ip) {
     if (!_available) return;
+    _display.ssd1306_command(SSD1306_DISPLAYON);
     _display.clearDisplay();
     _display.setTextSize(1);
     _display.setTextColor(SSD1306_WHITE);
@@ -96,6 +100,8 @@ void DisplayManager::showNormalMode(float weightG, bool stable,
         _pageChangedMs = millis();
     }
 
+    if (!_screenOn) return;
+
     _display.clearDisplay();
     _display.setTextColor(SSD1306_WHITE);
 
@@ -105,6 +111,26 @@ void DisplayManager::showNormalMode(float weightG, bool stable,
         default: break;
     }
     _display.display();
+}
+
+// ── Screen power ───────────────────────────────────────────────────────────
+
+void DisplayManager::wake() {
+    if (!_available) return;
+    if (!_screenOn) {
+        _display.ssd1306_command(SSD1306_DISPLAYON);
+        _page          = 0;
+        _pageChangedMs = 0;
+        _lastUpdateMs  = 0;
+    }
+    _screenOn = true;
+    _wakeMs   = millis();
+}
+
+void DisplayManager::sleep() {
+    if (!_available) return;
+    _display.ssd1306_command(SSD1306_DISPLAYOFF);
+    _screenOn = false;
 }
 
 // ── Helper ─────────────────────────────────────────────────────────────────
@@ -179,6 +205,11 @@ void DisplayManager::_drawPage1Hydration(float todayMl, uint32_t goalMl, uint32_
 
 void DisplayManager::update() {
     if (!_available) return;
+    if (_screenOn && millis() - _wakeMs >= SCREEN_ON_DURATION_MS) {
+        _display.ssd1306_command(SSD1306_DISPLAYOFF);
+        _screenOn = false;
+    }
+    if (!_screenOn) return;
     if (millis() - _lastUpdateMs < OLED_UPDATE_INTERVAL_MS) return;
     _lastUpdateMs = millis();
     _display.display();

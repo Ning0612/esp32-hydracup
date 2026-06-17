@@ -22,19 +22,24 @@ public:
                         float lastDrinkMl, uint32_t nextRemSec,
                         bool wifiOk, const String& ip, bool ntpSynced);
 
+    void wake();
+    void sleep();
     void update();
 
     bool isAvailable() const { return _available; }
 
 private:
-    static constexpr uint8_t  PAGE_COUNT       = 2;
-    static constexpr uint32_t PAGE_INTERVAL_MS = 4000;
+    static constexpr uint8_t  PAGE_COUNT            = 2;
+    static constexpr uint32_t PAGE_INTERVAL_MS      = 4000;
+    static constexpr uint32_t SCREEN_ON_DURATION_MS = 60000;
 
     Adafruit_SSD1306 _display{OLED_SCREEN_WIDTH, OLED_SCREEN_HEIGHT, &Wire, OLED_RESET_PIN};
-    bool     _available    = false;
-    uint32_t _lastUpdateMs = 0;
-    uint8_t  _page         = 0;
+    bool     _available     = false;
+    uint32_t _lastUpdateMs  = 0;
+    uint8_t  _page          = 0;
     uint32_t _pageChangedMs = 0;
+    bool     _screenOn      = false;
+    uint32_t _wakeMs        = 0;
 
     void _centerPrint(const char* text, int16_t y);
     void _drawPage0Weight(float weightG, const String& ip);

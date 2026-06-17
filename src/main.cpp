@@ -25,6 +25,8 @@ static fs::LittleFSFS LogFS;
 
 static AppState         appState;
 static AppConfig        appConfig;
+static CupState         s_prevCupState    = CupState::NO_CUP;
+static uint32_t         s_prevReminderSec = 1;
 static ConfigManager    configManager;
 static BuzzerController buzzerController;
 static DisplayManager   displayManager;
@@ -127,6 +129,9 @@ void setup() {
         drinkDetector.setEventLogger(&eventLogger);
         dailySummaryManager.init(discordNotifier, drinkDetector, timeManager, appConfig);
         Serial.printf("[INFO] Normal Mode  IP: %s\n", appState.ipAddress.c_str());
+        displayManager.sleep();
+        s_prevCupState    = drinkDetector.getCupState();
+        s_prevReminderSec = reminderManager.getNextReminderSec();
     } else {
         const bool apOk = wifiManager.startAP(appConfig.apSsid, appConfig.apPassword);
         appState.mode      = AppMode::AP_MODE;
@@ -164,6 +169,19 @@ void loop() {
     appState.nextReminderSec = reminderManager.getNextReminderSec();
 
     if (appState.mode == AppMode::NORMAL) {
+        // Wake display on cup pick-up/put-down or reminder fire
+        {
+            const CupState curCupState = drinkDetector.getCupState();
+            if (curCupState != s_prevCupState) {
+                if (curCupState == CupState::NO_CUP || s_prevCupState == CupState::NO_CUP)
+                    displayManager.wake();
+                s_prevCupState = curCupState;
+            }
+            if (appState.nextReminderSec == 0 && s_prevReminderSec > 0)
+                displayManager.wake();
+            s_prevReminderSec = appState.nextReminderSec;
+        }
+
         wifiManager.loop();
         dashboardServer.loop();
         appState.wifiConnected = wifiManager.isConnected();
