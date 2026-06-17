@@ -2,6 +2,8 @@
 #include <Wire.h>
 #include <LittleFS.h>
 
+static fs::LittleFSFS LogFS;
+
 #include "AppState.h"
 #include "app_types.h"
 #include "BuzzerController.h"
@@ -36,17 +38,27 @@ static DiscordNotifier  discordNotifier;
 static EventLogger      eventLogger;
 
 static void initFilesystem() {
-    if (LittleFS.begin(false)) {
+    if (LittleFS.begin(false, "/webfs", 5, "webfs")) {
         appState.fsOk = true;
         return;
     }
-    Serial.println("[WARN] LittleFS mount failed, attempting format...");
-    if (LittleFS.format() && LittleFS.begin(false)) {
+    Serial.println("[WARN] webfs mount failed, attempting format...");
+    if (LittleFS.format() && LittleFS.begin(false, "/webfs", 5, "webfs")) {
         appState.fsOk = true;
-        Serial.println("[WARN] LittleFS formatted (existing data cleared)");
+        Serial.println("[WARN] webfs formatted (web assets cleared, run uploadfs)");
     } else {
         appState.fsOk = false;
-        Serial.println("[ERROR] LittleFS unavailable");
+        Serial.println("[ERROR] webfs unavailable");
+    }
+}
+
+static void initLogFilesystem() {
+    if (LogFS.begin(true, "/logfs", 5, "logfs")) {
+        appState.logFsOk = true;
+        Serial.println("[INFO] logfs OK");
+    } else {
+        appState.logFsOk = false;
+        Serial.println("[ERROR] logfs unavailable — drink logging disabled");
     }
 }
 
@@ -55,6 +67,7 @@ void setup() {
     Serial.printf("\n[INFO] Water Tracker v%s booting\n", APP_VERSION);
 
     initFilesystem();
+    initLogFilesystem();
     configManager.load(appConfig);
 
     Wire.begin(PIN_OLED_SDA, PIN_OLED_SCL);
@@ -106,7 +119,7 @@ void setup() {
         if (appConfig.ntpEnabled) timeManager.init(appConfig);
         discordNotifier.init(appState, appConfig);
         discordNotifier.notifyOnline(appState.ipAddress);
-        eventLogger.init(appState.fsOk);
+        eventLogger.init(appState.logFsOk, LogFS);
         drinkDetector.setTimeManager(&timeManager);
         drinkDetector.setDiscordNotifier(&discordNotifier);
         drinkDetector.setEventLogger(&eventLogger);

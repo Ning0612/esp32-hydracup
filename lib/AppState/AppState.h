@@ -4,6 +4,7 @@
 struct AppState {
     AppMode  mode          = AppMode::BOOT;
     bool     fsOk          = false;
+    bool     logFsOk       = false;
     bool     oledOk        = false;
     bool     hx711Ok       = false;
     bool     buzzerOk      = false;

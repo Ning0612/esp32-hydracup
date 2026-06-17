@@ -1,11 +1,11 @@
 #include "EventLogger.h"
 #include "TimeManager.h"
-#include <LittleFS.h>
 
-void EventLogger::init(bool fsOk) {
+void EventLogger::init(bool fsOk, fs::LittleFSFS& fs) {
     _fsOk = fsOk;
-    if (_fsOk && !LittleFS.exists("/logs")) {
-        if (!LittleFS.mkdir("/logs")) {
+    _fs   = &fs;
+    if (_fsOk && !_fs->exists("/logs")) {
+        if (!_fs->mkdir("/logs")) {
             Serial.println("[EventLog] Failed to create /logs — logging disabled");
             _fsOk = false;
         }
@@ -13,12 +13,12 @@ void EventLogger::init(bool fsOk) {
 }
 
 void EventLogger::logDrink(const String& timestamp, float amountMl, float totalMl, TimeManager* tm) {
-    if (!_fsOk) return;
+    if (!_fsOk || !_fs) return;
 
     const String ym   = (tm && tm->isSynced()) ? tm->getYearMonth() : String("unsynced");
     const String path = String("/logs/drink-") + ym + ".jsonl";
 
-    File f = LittleFS.open(path, "a");
+    File f = _fs->open(path, "a");
     if (!f) {
         Serial.printf("[EventLog] Failed to open %s\n", path.c_str());
         return;
