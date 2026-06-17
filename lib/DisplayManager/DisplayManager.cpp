@@ -113,23 +113,26 @@ void DisplayManager::_centerPrint(const char* text, int16_t y) {
     int16_t x1, y1;
     uint16_t w, h;
     _display.getTextBounds(text, 0, 0, &x1, &y1, &w, &h);
-    _display.setCursor((OLED_SCREEN_WIDTH - (int16_t)w) / 2 - x1, y);
+    int16_t x = (OLED_SCREEN_WIDTH - (int16_t)w) / 2 - x1;
+    if (x < 0) x = 0;
+    _display.setCursor(x, y);
     _display.print(text);
 }
 
 // ── Page renderers ─────────────────────────────────────────────────────────
 
 void DisplayManager::_drawPage0Weight(float weightG, const String& ip) {
-    // Row 1 (y=2): IP address, textSize 1, centered
+    if (!isfinite(weightG)) weightG = 0.0f;
+    // Row 1 (y=0): IP address, textSize 1, centered
     _display.setTextSize(1);
     String ipStr = ip.length() > 0 ? ip : "--";
-    _centerPrint(ipStr.c_str(), 2);
+    _centerPrint(ipStr.c_str(), 0);
 
-    // Row 2 (y=14): weight value, textSize 2, centered
-    _display.setTextSize(2);
+    // Row 2 (y=8): weight value, textSize 3 (18×24 px), centered
+    _display.setTextSize(3);
     char buf[12];
     snprintf(buf, sizeof(buf), "%.0f g", weightG);
-    _centerPrint(buf, 14);
+    _centerPrint(buf, 8);
     _display.setTextSize(1);
 }
 
@@ -140,27 +143,24 @@ void DisplayManager::_drawPage1Hydration(float todayMl, uint32_t goalMl, uint32_
     const uint32_t pct    = (goalMl > 0) ? (uint32_t)(todayMl * 100.0f / goalMl) : 0;
     const uint32_t barPct = pct > 100 ? 100 : pct;
 
-    // Row 1 (y=0): today amount + percentage, centered
-    snprintf(buf, sizeof(buf), "%.0f ml  %lu%%", todayMl, (unsigned long)barPct);
-    _display.setTextSize(1);
+    // Row 1 (y=0): today ml, textSize 2 (12×16 px), centered
+    _display.setTextSize(2);
+    snprintf(buf, sizeof(buf), "%.0f ml", todayMl);
     _centerPrint(buf, 0);
+    _display.setTextSize(1);
 
-    // Progress bar (y=9, height=3)
-    _display.drawRect(0, 9, 128, 3, SSD1306_WHITE);
-    const int fillW = (int)(126 * barPct / 100);
-    if (fillW > 0) _display.fillRect(1, 10, fillW, 1, SSD1306_WHITE);
+    // Row 2 (y=16): percentage + goal + drink count, centered
+    snprintf(buf, sizeof(buf), "%lu%%  G:%lu  D:%lu", (unsigned long)barPct, (unsigned long)goalMl, (unsigned long)drinkCount);
+    _centerPrint(buf, 16);
 
-    // Row 3 (y=14): goal + drink count, centered
-    snprintf(buf, sizeof(buf), "Goal:%lu ml  Dr:%lu", (unsigned long)goalMl, (unsigned long)drinkCount);
-    _centerPrint(buf, 14);
-
-    // Row 4 (y=23): last drink + next reminder, centered
+    // Row 3 (y=24): last drink + next reminder, centered
+    if (!isfinite(lastDrinkMl) || lastDrinkMl < 0.0f) lastDrinkMl = 0.0f;
     if (nextRemSec == 0) {
-        _centerPrint("Drink now!", 23);
+        _centerPrint("Drink now!", 24);
     } else {
         char lastBuf[10];
         if (lastDrinkMl > 0.0f) {
-            snprintf(lastBuf, sizeof(lastBuf), "%.0f ml", lastDrinkMl);
+            snprintf(lastBuf, sizeof(lastBuf), "%.0fml", lastDrinkMl);
         } else {
             snprintf(lastBuf, sizeof(lastBuf), "--");
         }
@@ -171,7 +171,7 @@ void DisplayManager::_drawPage1Hydration(float todayMl, uint32_t goalMl, uint32_
         } else {
             snprintf(buf, sizeof(buf), "L:%s  N:%lu sec", lastBuf, (unsigned long)s);
         }
-        _centerPrint(buf, 23);
+        _centerPrint(buf, 24);
     }
 }
 
