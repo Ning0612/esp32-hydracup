@@ -104,6 +104,7 @@ void setup() {
                               buzzerController, reminderManager);
         if (appConfig.ntpEnabled) timeManager.init(appConfig);
         discordNotifier.init(appState, appConfig);
+        discordNotifier.notifyOnline(appState.ipAddress);
         eventLogger.init(appState.fsOk);
         drinkDetector.setTimeManager(&timeManager);
         drinkDetector.setDiscordNotifier(&discordNotifier);

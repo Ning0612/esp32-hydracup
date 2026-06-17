@@ -12,6 +12,37 @@ void DiscordNotifier::init(AppState& state, const AppConfig& cfg) {
                   _state->webhookConfigured ? "yes" : "no");
 }
 
+void DiscordNotifier::notifyOnline(const String& ipAddress) {
+    if (!_cfg || _cfg->discordWebhookUrl.isEmpty()) return;
+    if (!WiFi.isConnected()) return;
+    if (ipAddress.isEmpty() || ipAddress == "0.0.0.0") return;
+
+    bool expected = false;
+    if (!_taskRunning.compare_exchange_strong(expected, true)) {
+        Serial.println("[Discord] Drop online: previous send in progress");
+        return;
+    }
+
+    TaskParam* p = new TaskParam();
+    if (!p) { _taskRunning.store(false); return; }
+
+    strncpy(p->webhookUrl, _cfg->discordWebhookUrl.c_str(), sizeof(p->webhookUrl) - 1);
+    p->webhookUrl[sizeof(p->webhookUrl) - 1] = '\0';
+
+    snprintf(p->body, sizeof(p->body),
+             "{\"content\":\"[HydraCup] Online - http://%s\"}",
+             ipAddress.c_str());
+
+    p->lastOkPtr      = &_state->webhookLastOk;
+    p->taskRunningPtr = &_taskRunning;
+
+    if (xTaskCreate(_sendTask, "discord_online", 8192, p, 1, nullptr) != pdPASS) {
+        Serial.println("[Discord] xTaskCreate failed (online)");
+        delete p;
+        _taskRunning.store(false);
+    }
+}
+
 void DiscordNotifier::notifyDrink(float amountMl, float totalMl, const String& timestamp) {
     if (!_cfg || _cfg->discordWebhookUrl.isEmpty()) return;
     if (!WiFi.isConnected()) return;
