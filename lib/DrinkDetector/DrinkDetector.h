@@ -1,5 +1,6 @@
 #pragma once
 #include <Arduino.h>
+#include <Preferences.h>
 #include "app_types.h"
 #include "ScaleManager.h"
 #include "AppState.h"
@@ -41,11 +42,14 @@ private:
     float    _lastDrinkMl           = 0.0f;
     uint32_t _drinkCount            = 0;
     bool     _cupLifted             = false;
-    uint32_t _cupLiftedAtMs        = 0;
+    uint32_t _cupLiftedAtMs         = 0;
+    bool     _nvsDone               = false;
 
     void _transitionTo(CupState next);
     void _onDrinkConfirmed(float amountMl);
     void _onRefillDetected(float amountMl);
+    void _nvsRestore();
+    void _nvsSave();
 
     static const char* _cupStateName(CupState s);
 };

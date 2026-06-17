@@ -1,5 +1,6 @@
 #pragma once
 #include <Arduino.h>
+#include <Preferences.h>
 
 class DiscordNotifier;
 class DrinkDetector;
@@ -13,11 +14,11 @@ public:
     void update();
 
 private:
-    DiscordNotifier* _discord  = nullptr;
-    DrinkDetector*   _detector = nullptr;
-    TimeManager*     _time     = nullptr;
-    const AppConfig* _cfg      = nullptr;
-    int              _lastFiredDay = -1;
+    DiscordNotifier* _discord        = nullptr;
+    DrinkDetector*   _detector       = nullptr;
+    TimeManager*     _time           = nullptr;
+    const AppConfig* _cfg            = nullptr;
+    String           _lastSettledKey;
 
     void _fire(const struct tm& now);
 };

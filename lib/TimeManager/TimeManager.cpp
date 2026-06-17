@@ -62,3 +62,12 @@ String TimeManager::getYearMonth() const {
     strftime(buf, sizeof(buf), "%Y-%m", &tm);
     return String(buf);
 }
+
+String TimeManager::getDateString() const {
+    if (!isSynced()) return "";
+    struct tm tm;
+    if (!getLocalTime(&tm, 0)) return "";
+    char buf[12];
+    strftime(buf, sizeof(buf), "%Y-%m-%d", &tm);
+    return String(buf);
+}

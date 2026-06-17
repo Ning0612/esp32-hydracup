@@ -10,6 +10,7 @@ public:
     bool   getLocalTm(struct tm& t) const;
     String getISOTimestamp() const;
     String getYearMonth() const;
+    String getDateString() const;
 
 private:
     static constexpr uint32_t RESYNC_INTERVAL_MS = 12UL * 60UL * 60UL * 1000UL;

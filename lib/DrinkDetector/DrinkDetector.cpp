@@ -17,6 +17,12 @@ void DrinkDetector::init(ScaleManager& scale, AppState& state, const AppConfig& 
 
 void DrinkDetector::update() {
     if (!_scale || !_state || !_cfg || !_reminder || !_buzzer) return;
+
+    if (!_nvsDone && _time && _time->isSynced()) {
+        _nvsRestore();
+        _nvsDone = true;
+    }
+
     if (!_scale->isReady() || !_scale->isSamplesReady()) return;
 
     const float  weight    = _scale->getWeightGrams();
@@ -114,6 +120,7 @@ void DrinkDetector::resetDailyCounters() {
         _state->lastDrinkMl     = 0.0f;
         _state->drinkCountToday = 0;
     }
+    _nvsSave();
     Serial.println("[Drink] Daily counters reset");
 }
 
@@ -138,6 +145,51 @@ void DrinkDetector::_onDrinkConfirmed(float amountMl) {
     const String ts = _time ? _time->getISOTimestamp() : String("");
     if (_discord)  _discord->notifyDrink(amountMl, _todayTotalMl, _drinkCount);
     if (_eventLog) _eventLog->logDrink(ts, amountMl, _todayTotalMl, _time);
+    _nvsSave();
+}
+
+void DrinkDetector::_nvsRestore() {
+    const String today = _time->getDateString();
+
+    Preferences prefs;
+    prefs.begin("drink_ctr", true);
+    const String   period = prefs.getString("period", "");
+    const float    total  = prefs.getFloat("total_ml", 0.0f);
+    const uint32_t count  = prefs.getUInt("count", 0);
+    const float    lastMl = prefs.getFloat("last_ml", 0.0f);
+    prefs.end();
+
+    if (period == today) {
+        // Same day: restore counters
+        _todayTotalMl = total;
+        _drinkCount   = count;
+        _lastDrinkMl  = lastMl;
+        Serial.printf("[Drink] NVS restore: %s total=%.0f count=%u\n",
+                      today.c_str(), total, count);
+    } else if (!period.isEmpty()) {
+        // Previous period: restore into RAM so DailySummaryManager can settle
+        // Do NOT overwrite NVS — resetDailyCounters() will write today after settlement
+        _todayTotalMl = total;
+        _drinkCount   = count;
+        _lastDrinkMl  = lastMl;
+        Serial.printf("[Drink] NVS prev period %s total=%.0f — pending settlement\n",
+                      period.c_str(), total);
+    } else {
+        // No saved data: fresh start
+        Serial.println("[Drink] NVS no data, fresh start");
+        _nvsSave();
+    }
+}
+
+void DrinkDetector::_nvsSave() {
+    if (!_time || !_time->isSynced()) return;
+    Preferences prefs;
+    prefs.begin("drink_ctr", false);
+    prefs.putString("period",   _time->getDateString());
+    prefs.putFloat("total_ml",  _todayTotalMl);
+    prefs.putUInt("count",      _drinkCount);
+    prefs.putFloat("last_ml",   _lastDrinkMl);
+    prefs.end();
 }
 
 void DrinkDetector::_onRefillDetected(float amountMl) {
