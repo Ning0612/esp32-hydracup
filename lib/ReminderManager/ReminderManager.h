@@ -13,7 +13,8 @@ public:
     void setEnabled(bool en) {
         _enabled = en;
         if (!en) {
-            _alerting = false;
+            _alerting         = false;
+            _overdueWhileAway = false;
             if (_buzzer) _buzzer->stop();
         }
     }
@@ -32,6 +33,9 @@ private:
     uint32_t          _intervalMs   = 60UL * 60000UL;
     bool              _enabled      = true;
     uint32_t          _lastEventMs  = 0;
-    bool              _alerting     = false;
-    uint32_t          _alertStartMs = 0;
+    bool              _alerting         = false;
+    uint32_t          _alertStartMs     = 0;
+    bool              _overdueWhileAway = false;
+
+    bool _cupIsStable() const;
 };

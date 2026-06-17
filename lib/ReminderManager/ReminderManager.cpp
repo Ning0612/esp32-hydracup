@@ -19,16 +19,27 @@ void ReminderManager::update() {
             _lastEventMs = millis();
             if (_buzzer) _buzzer->stop();
             Serial.printf("[Reminder] Alert stopped (%s)\n", cupLifted ? "cup lifted" : "timeout");
-            return;
         }
+        return;
+    }
 
-        if (_buzzer && !_buzzer->isPlaying()) {
-            _buzzer->play(BeepPattern::REMINDER);
+    // Overdue: interval fired while cup was away; alert as soon as cup is stable
+    if (_overdueWhileAway) {
+        if (_cupIsStable()) {
+            _overdueWhileAway = false;
+            _alerting         = true;
+            _alertStartMs     = millis();
+            Serial.println("[Reminder] Time to drink water! (overdue)");
+            if (_buzzer) _buzzer->play(BeepPattern::REMINDER);
         }
         return;
     }
 
     if (millis() - _lastEventMs >= _intervalMs) {
+        if (!_cupIsStable()) {
+            _overdueWhileAway = true;
+            return;
+        }
         _alerting     = true;
         _alertStartMs = millis();
         Serial.println("[Reminder] Time to drink water!");
@@ -37,17 +48,26 @@ void ReminderManager::update() {
 }
 
 void ReminderManager::resetTimer() {
-    _lastEventMs = millis();
-    _alerting    = false;
+    _lastEventMs      = millis();
+    _alerting         = false;
+    _overdueWhileAway = false;
 }
 
 void ReminderManager::setBuzzer(BuzzerController* buz) {
     _buzzer = buz;
 }
 
+bool ReminderManager::_cupIsStable() const {
+    if (!_appState) {
+        Serial.println("[Reminder][WARN] _appState not set");
+        return true;  // fail-open: assume cup present
+    }
+    return _appState->cupState == CupState::CUP_STABLE;
+}
+
 uint32_t ReminderManager::getNextReminderSec() const {
     if (!_enabled || _intervalMs == 0) return 0;
-    if (_alerting) return 0;
+    if (_alerting || _overdueWhileAway) return 0;
     const uint32_t elapsed = millis() - _lastEventMs;
     if (elapsed >= _intervalMs) return 0;
     return (_intervalMs - elapsed) / 1000;
