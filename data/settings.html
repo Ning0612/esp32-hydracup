@@ -105,8 +105,45 @@
     <input type="text" id="n2">
   </div>
   <div class="form-group">
-    <label>時區</label>
-    <input type="text" id="tz" placeholder="Asia/Taipei">
+    <label>時區（UTC 偏移）</label>
+    <select id="tz">
+      <option value="-43200">UTC-12</option>
+      <option value="-39600">UTC-11</option>
+      <option value="-36000">UTC-10</option>
+      <option value="-32400">UTC-9</option>
+      <option value="-28800">UTC-8</option>
+      <option value="-25200">UTC-7</option>
+      <option value="-21600">UTC-6</option>
+      <option value="-18000">UTC-5</option>
+      <option value="-14400">UTC-4</option>
+      <option value="-12600">UTC-3:30</option>
+      <option value="-10800">UTC-3</option>
+      <option value="-7200">UTC-2</option>
+      <option value="-3600">UTC-1</option>
+      <option value="0">UTC+0</option>
+      <option value="3600">UTC+1</option>
+      <option value="7200">UTC+2</option>
+      <option value="10800">UTC+3</option>
+      <option value="12600">UTC+3:30</option>
+      <option value="14400">UTC+4</option>
+      <option value="16200">UTC+4:30</option>
+      <option value="18000">UTC+5</option>
+      <option value="19800">UTC+5:30</option>
+      <option value="20700">UTC+5:45</option>
+      <option value="21600">UTC+6</option>
+      <option value="23400">UTC+6:30</option>
+      <option value="25200">UTC+7</option>
+      <option value="28800">UTC+8</option>
+      <option value="32400">UTC+9</option>
+      <option value="34200">UTC+9:30</option>
+      <option value="36000">UTC+10</option>
+      <option value="37800">UTC+10:30</option>
+      <option value="39600">UTC+11</option>
+      <option value="43200">UTC+12</option>
+      <option value="45900">UTC+12:45</option>
+      <option value="46800">UTC+13</option>
+      <option value="50400">UTC+14</option>
+    </select>
   </div>
 
   <button class="btn btn-primary" onclick="save()">儲存設定</button>
@@ -181,7 +218,10 @@ function load() {
     document.getElementById('ne').checked = !!d.ntpEnabled;
     document.getElementById('n1').value   = d.ntpServer1 || 'pool.ntp.org';
     document.getElementById('n2').value   = d.ntpServer2 || 'time.google.com';
-    document.getElementById('tz').value   = d.timezone || 'Asia/Taipei';
+    const tzSec = d.timezoneOffsetSec != null ? d.timezoneOffsetSec : 28800;
+    const tzSel = document.getElementById('tz');
+    const tzOpt = Array.from(tzSel.options).find(o => parseInt(o.value) === tzSec);
+    tzSel.value = tzOpt ? tzOpt.value : '28800';
     document.getElementById('cpt').value  = d.cupPresentThresholdGram != null ? d.cupPresentThresholdGram : 80;
     document.getElementById('stg').value  = d.stableToleranceGram != null ? d.stableToleranceGram : 3;
     document.getElementById('sdm').value  = d.stableDurationMs || 3000;
@@ -208,7 +248,7 @@ function save() {
     ntpEnabled:              document.getElementById('ne').checked,
     ntpServer1:              document.getElementById('n1').value,
     ntpServer2:              document.getElementById('n2').value,
-    timezone:                document.getElementById('tz').value,
+    timezoneOffsetSec:       parseInt(document.getElementById('tz').value),
     cupPresentThresholdGram: parseFloat(document.getElementById('cpt').value) || 80,
     stableToleranceGram:     parseFloat(document.getElementById('stg').value) || 3,
     stableDurationMs:        parseInt(document.getElementById('sdm').value)   || 3000,

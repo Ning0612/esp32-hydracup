@@ -146,7 +146,7 @@ void DashboardServer::_handleGetConfig() {
     doc["ntpEnabled"]              = _cfg->ntpEnabled;
     doc["ntpServer1"]              = _cfg->ntpServer1;
     doc["ntpServer2"]              = _cfg->ntpServer2;
-    doc["timezone"]                = _cfg->timezone;
+    doc["timezoneOffsetSec"]       = _cfg->timezoneOffsetSec;
     doc["calibrationFactor"]       = _scale->getCalibrationFactor();
     doc["cupPresentThresholdGram"] = _cfg->cupPresentThresholdGram;
     doc["stableToleranceGram"]     = _cfg->stableToleranceGram;
@@ -245,9 +245,13 @@ void DashboardServer::_handlePostConfig() {
         _cfg->ntpServer2 = doc["ntpServer2"].as<String>();
         rebootRequired = true;
     }
-    if (!doc["timezone"].isNull()) {
-        _cfg->timezone = doc["timezone"].as<String>();
-        rebootRequired = true;
+    {
+        JsonVariant tzV = doc["timezoneOffsetSec"];
+        if (!tzV.isNull() && (tzV.is<int>() || tzV.is<float>())) {
+            _cfg->timezoneOffsetSec =
+                (int)constrain((long)tzV.as<int>(), -43200L, 50400L);
+            rebootRequired = true;
+        }
     }
 
     // Advanced sensor settings — ScaleManager reads at init, needs reboot.
