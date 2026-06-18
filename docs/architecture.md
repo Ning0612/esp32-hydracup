@@ -1,0 +1,158 @@
+# Architecture
+
+## 系統架構
+
+HydraCup 在 ESP32 上以 Arduino 框架運行，分為兩個互斥模式：
+
+```
+┌────────────────────────────────────────────────────────┐
+│                    BOOT                                │
+│  Serial → LittleFS → NVS/Config → OLED → HX711        │
+│  → Buzzer → WiFi configured?                          │
+│        No  → AP_MODE (ConfigPortal)                   │
+│        Yes → STA connect → OK? → NORMAL : AP_MODE     │
+└────────────────────────────────────────────────────────┘
+
+┌────────── AP Mode ─────────────────────────────────────┐
+│  ConfigPortal  HTTP server @ 192.168.4.1               │
+│  → WiFi config saved → reboot → NORMAL                │
+└────────────────────────────────────────────────────────┘
+
+┌────────── Normal Mode ─────────────────────────────────┐
+│  ScaleManager → DrinkDetector                          │
+│                     ├─→ EventLogger                    │
+│                     ├─→ DiscordNotifier                │
+│                     ├─→ ReminderManager                │
+│                     ├─→ BuzzerController               │
+│                     └─→ AppState                       │
+│                                                        │
+│  DashboardServer  (REST API + static web assets)       │
+│  DisplayManager   (OLED rotating pages)                │
+│  TimeManager      (NTP sync)                           │
+│  DailySummaryManager  (midnight Discord summary)       │
+└────────────────────────────────────────────────────────┘
+```
+
+### 設計約束
+
+- `main.cpp` 只包含 `setup()` 與 `loop()`，**不含任何業務邏輯**
+- `loop()` 依序呼叫各模組的 `update()` 或 `loop()`
+- 絕對禁止在 `loop()` 或任何 `update()` 中使用 `delay()`
+- 所有計時使用 `millis()`
+- Discord HTTP POST 使用 FreeRTOS 獨立任務（非阻塞）
+
+---
+
+## 模組職責表
+
+| 模組 | 職責 |
+|------|------|
+| `AppState` | 共用執行時狀態結構（模式、杯子狀態、今日飲水量等） |
+| `ConfigManager` | NVS 讀寫 `AppConfig`；命名空間 `water_config` |
+| `WiFiManager` | STA 連線、AP 啟動、連線狀態管理 |
+| `ConfigPortal` | AP Mode HTTP 伺服器（192.168.4.1），WiFi 設定 |
+| `DashboardServer` | Normal Mode HTTP 伺服器，儀表板 + REST API |
+| `ScaleManager` | HX711 取樣、移動平均濾波、秤台校正 |
+| `DrinkDetector` | 6 態飲水偵測狀態機 + 每日計數器（NVS 持久化） |
+| `ReminderManager` | millis 計時提醒，飲水後重置 |
+| `BuzzerController` | LEDC PWM 非阻塞蜂鳴佇列（7 種模式） |
+| `DisplayManager` | SSD1306 OLED 輪播（2 頁，各 4 秒），自動睡眠 |
+| `DiscordNotifier` | 非同步 HTTPS POST 至 Discord Webhook |
+| `EventLogger` | LittleFS JSONL 飲水事件日誌（依月份分檔） |
+| `TimeManager` | NTP 時間同步；提供 ISO-8601 時戳 |
+| `DailySummaryManager` | 每日午夜聚合統計並送出 Discord 摘要 |
+
+---
+
+## 開機流程
+
+```
+1. Serial.begin(115200)
+2. LittleFS.begin(webfs)          → 靜態資源
+3. LittleFS.begin(logfs)          → 日誌分割區（首次自動格式化）
+4. ConfigManager.load(cfg)        → 從 NVS 讀取設定
+5. OLED.init()                    → 失敗則記錄並繼續
+6. HX711.init()                   → 失敗則記錄並繼續
+7. BuzzerController.init()        → BOOT_OK 蜂鳴
+8. WiFiManager.connect(cfg)
+   ├─ WiFi SSID 空白 → AP_MODE
+   ├─ 連線失敗       → AP_MODE
+   └─ 連線成功       → NORMAL
+9. NORMAL: NTP sync, DashboardServer start, loop()
+   AP_MODE: ConfigPortal start, loop()
+```
+
+外設（OLED、HX711）初始化失敗時**不中斷開機**，僅記錄錯誤並設 `AppState.oledOk = false` / `hx711Ok = false`。
+
+---
+
+## 飲水偵測狀態機
+
+### 狀態定義
+
+| 狀態 | 值 | 說明 |
+|------|----|------|
+| `NO_CUP` | 0 | 無杯子（重量低於閾值） |
+| `CUP_UNSTABLE` | 1 | 杯子已放上但重量未穩定 |
+| `CUP_STABLE` | 2 | 杯子穩定放置 |
+| `POSSIBLE_DRINK` | 3 | 重量下降中（可能正在喝） |
+| `DRINK_CONFIRMED` | 4 | 飲水確認（瞬間狀態） |
+| `REFILL_DETECTED` | 5 | 補水確認（瞬間狀態） |
+
+### 狀態轉換圖
+
+```
+                    ┌─────────────────────────────┐
+                    │                             │
+                    ▼                             │ weight < threshold
+              [NO_CUP]                            │ (_cupLifted = true)
+                    │                             │
+   weight >= threshold                            │
+                    │                             │
+                    ▼                             │
+          [CUP_UNSTABLE] ◄────────────────────────┘
+           (_cupLifted?)
+                    │
+    isStable() && !_cupLifted
+                    │
+                    ▼
+           [CUP_STABLE] ◄──────────────────────────────────────────┐
+                    │                                               │
+    weight drops    │  weight < threshold          isStable()      │
+    (not stable)    │  (_cupLifted = true)             │           │
+                    │                                  │           │
+                    ▼                                  │           │
+        [POSSIBLE_DRINK]                               │           │
+                    │                                  │           │
+    weight < threshold     isStable()                  │           │
+    (_cupLifted = true)        │                       │           │
+                    │          └───────────────────────┘           │
+                    │                                               │
+                    └───────────────────────────────────────────────┘
+                              (→ CUP_STABLE after update)
+
+    isStable() && _cupLifted:
+      delta in [minDrink, maxDrink]             → [DRINK_CONFIRMED]  → CUP_STABLE
+      (newStable - prevRef) >= minDrink         → [REFILL_DETECTED]  → CUP_STABLE
+      else                                      → CUP_STABLE
+```
+
+### 關鍵機制
+
+**`_cupLifted` 旗標**：只有當狀態為 `CUP_STABLE`（或 `POSSIBLE_DRINK`）且重量低於 `cupPresentThresholdGram` 時才設置。確保**飲水與補水事件只能透過「拿起再放下」路徑觸發**，防止秤台上的重量微變造成誤判。
+
+**`DRINK_LIFT_TIMEOUT_MS = 120,000 ms`**：若杯子被拿起超過 120 秒後放回，重置 `_cupLifted` 為 false，不觸發飲水事件（視為與飲水無關的操作）。
+
+**杯子放置但重量變化（無拿起）**：只更新 `_prevStableWeight`，不觸發任何飲水或補水事件。
+
+### 觸發條件參數
+
+| 參數 | 預設值 | 說明 |
+|------|-------|------|
+| `cupPresentThresholdGram` | 80.0 g | 低於此值視為無杯子 |
+| `stableToleranceGram` | 3.0 g | 穩定判斷允許誤差 |
+| `stableDurationMs` | 3000 ms | 必須在誤差內持續此時間才算穩定 |
+| `minDrinkDeltaMl` | 20.0 ml | 最小有效飲水量 |
+| `maxDrinkDeltaMl` | 500.0 ml | 最大有效飲水量 |
+
+`1 g ≈ 1 ml` 在整個系統中成立。
