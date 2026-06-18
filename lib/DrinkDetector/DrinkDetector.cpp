@@ -80,20 +80,8 @@ void DrinkDetector::update() {
                 _cupLiftedAtMs = millis();
                 _transitionTo(CupState::NO_CUP);
             } else if (_scale->isStable()) {
-                const float currentStable = _scale->getStableWeightGrams();
-                const float delta         = _prevStableWeight - currentStable;
-
-                if (delta >= _cfg->minDrinkDeltaMl && delta <= _cfg->maxDrinkDeltaMl) {
-                    _onDrinkConfirmed(delta);
-                    // stay in DRINK_CONFIRMED this cycle so OLED/API/EventLogger can observe it
-                } else if ((currentStable - _prevStableWeight) >= _cfg->minDrinkDeltaMl) {
-                    _onRefillDetected(currentStable - _prevStableWeight);
-                    // stay in REFILL_DETECTED this cycle
-                } else {
-                    // noise or out-of-range: update reference and return to stable immediately
-                    _prevStableWeight = currentStable;
-                    _transitionTo(CupState::CUP_STABLE);
-                }
+                _prevStableWeight = _scale->getStableWeightGrams();
+                _transitionTo(CupState::CUP_STABLE);
             }
             break;
 
