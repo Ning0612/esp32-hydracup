@@ -10,6 +10,28 @@
 <div class="container">
   <div class="page-title">📊 飲水歷史</div>
 
+  <!-- 年度熱力圖 -->
+  <div class="card">
+    <div class="hmap-header">
+      <div class="label">年度飲水熱力圖</div>
+      <div style="display:flex;align-items:center;gap:6px">
+        <button class="hmap-yr-btn" id="yr-prev">&#8249;</button>
+        <span class="hmap-yr-label" id="yr-label"></span>
+        <button class="hmap-yr-btn" id="yr-next">&#8250;</button>
+      </div>
+    </div>
+    <div id="hmap-loading" class="sub" style="text-align:center;padding:24px 0">載入中…</div>
+    <div id="hmap-wrap" class="hmap-wrap" style="display:none">
+      <canvas id="hmap-canvas"></canvas>
+    </div>
+    <div id="hmap-tip" class="hmap-tip"></div>
+    <div class="hmap-legend">
+      <span>少</span>
+      <canvas id="hmap-lgd" height="12"></canvas>
+      <span>多（≥目標）</span>
+    </div>
+  </div>
+
   <!-- 月份導航 -->
   <div class="month-nav">
     <button id="btn-prev">&#8249;</button>
@@ -130,20 +152,203 @@
 
 <script>
 const now = new Date();
-let curYear  = now.getFullYear();
-let curMonth = now.getMonth() + 1;
+let curYear   = now.getFullYear();
+let curMonth  = now.getMonth() + 1;
 let dailyGoal = 2000;
+
+// Heatmap state
+let curHmapYear  = now.getFullYear();
+let _hmapCache   = {};   // year -> dayTotals[]
+let _hmapFetchSeq = 0;
+
+// Month log state
 let _cachedEntries = [];
-let _logSorted = [];
-let _logPage = 1;
-let _logPageSize = 10;
-let _logExpanded = false;
+let _logSorted = [], _logPage = 1, _logPageSize = 10, _logExpanded = false;
 let _fetchSeq = 0;
 
 fetch('/api/config').then(r => r.json()).then(d => {
   if (d.ok && d.dailyGoalMl > 0 && d.dailyGoalMl < 50000) dailyGoal = d.dailyGoalMl;
   render();
-}).catch(() => render());
+  loadYearHeatmap(curHmapYear);
+}).catch(() => { render(); loadYearHeatmap(curHmapYear); });
+
+// ─── Heatmap ───────────────────────────────────────────────────────────────
+
+const HM = { CELL: 12, GAP: 2, LW: 22, LH: 18 };
+HM.STEP = HM.CELL + HM.GAP;
+
+async function loadYearHeatmap(year) {
+  const seq = ++_hmapFetchSeq;
+  document.getElementById('yr-label').textContent = year;
+  document.getElementById('yr-next').disabled = year >= now.getFullYear();
+
+  if (_hmapCache[year]) { drawHeatmap(year, _hmapCache[year]); return; }
+
+  document.getElementById('hmap-loading').style.display = '';
+  document.getElementById('hmap-wrap').style.display = 'none';
+
+  const curY = now.getFullYear(), curM = now.getMonth() + 1;
+  const months = [];
+  for (let m = 1; m <= 12; m++)
+    if (year < curY || m <= curM) months.push(String(m).padStart(2, '0'));
+
+  const results = await Promise.allSettled(
+    months.map(m => fetch('/api/logs?month=' + year + '-' + m).then(r => r.json()))
+  );
+  if (seq !== _hmapFetchSeq) return;
+
+  const isLeap  = year % 400 === 0 || (year % 4 === 0 && year % 100 !== 0);
+  const nDays   = isLeap ? 366 : 365;
+  const jan1    = new Date(year, 0, 1);
+  const dt      = new Array(nDays).fill(0);
+
+  for (const r of results) {
+    if (r.status !== 'fulfilled' || !r.value.ok) continue;
+    for (const e of (r.value.entries || [])) {
+      // Extract YYYY-MM-DD from the device's local ISO string to avoid browser timezone skew
+      const dm = e.ts && e.ts.match(/^(\d{4})-(\d{2})-(\d{2})/);
+      if (!dm) continue;
+      const ey = +dm[1], em = +dm[2], ed = +dm[3];
+      if (ey !== year) continue;
+      const idx = Math.round((new Date(year, em - 1, ed) - jan1) / 86400000);
+      if (idx >= 0 && idx < nDays && e.total > dt[idx]) dt[idx] = e.total;
+    }
+  }
+
+  // Only cache past years; current year may gain new entries while page stays open
+  if (year < now.getFullYear()) _hmapCache[year] = dt;
+  drawHeatmap(year, dt);
+}
+
+function drawHeatmap(year, dt) {
+  document.getElementById('hmap-loading').style.display = 'none';
+  document.getElementById('hmap-wrap').style.display   = '';
+
+  const { CELL, GAP, STEP, LW, LH } = HM;
+  const isLeap = year % 400 === 0 || (year % 4 === 0 && year % 100 !== 0);
+  const nDays  = isLeap ? 366 : 365;
+  const jan1   = new Date(year, 0, 1);
+  const startWd = (jan1.getDay() + 6) % 7;  // Mon-first: 0=Mon,6=Sun
+  const nWeeks  = Math.ceil((startWd + nDays) / 7);
+
+  const canvas = document.getElementById('hmap-canvas');
+  const r  = window.devicePixelRatio || 1;
+  const cw = LW + nWeeks * STEP + 4;
+  const ch = LH + 7 * STEP;
+  canvas.width  = cw * r;
+  canvas.height = ch * r;
+  canvas.style.width  = cw + 'px';
+  canvas.style.height = ch + 'px';
+  const ctx = canvas.getContext('2d');
+  ctx.scale(r, r);
+  ctx.clearRect(0, 0, cw, ch);
+
+  // Month labels
+  const MONTHS = ['1月','2月','3月','4月','5月','6月','7月','8月','9月','10月','11月','12月'];
+  ctx.font = '9px -apple-system, sans-serif';
+  ctx.fillStyle = '#8ca8b8';
+  ctx.textAlign = 'left';
+  let lastCol = -1;
+  for (let m = 0; m < 12; m++) {
+    const doy = Math.round((new Date(year, m, 1) - jan1) / 86400000);
+    const col = Math.floor((startWd + doy) / 7);
+    if (col !== lastCol) { ctx.fillText(MONTHS[m], LW + col * STEP, 12); lastCol = col; }
+  }
+
+  // Day-of-week labels (Mon / Wed / Fri)
+  const WD = ['一','二','三','四','五','六','日'];
+  ctx.textAlign = 'right';
+  [0, 2, 4].forEach(row => {
+    ctx.fillText(WD[row], LW - 3, LH + row * STEP + CELL - 1);
+  });
+
+  // Cells
+  for (let d = 0; d < nDays; d++) {
+    const grid = startWd + d;
+    const col  = Math.floor(grid / 7);
+    const row  = grid % 7;
+    const x    = LW + col * STEP;
+    const y    = LH + row * STEP;
+    const tot  = dt[d] || 0;
+
+    let fill;
+    if (tot <= 0)              fill = 'rgba(255,255,255,0.06)';
+    else if (tot >= dailyGoal) fill = '#00ff88';
+    else {
+      const pct = tot / dailyGoal;
+      fill = pct < 0.25 ? 'rgba(0,212,255,0.18)'
+           : pct < 0.50 ? 'rgba(0,212,255,0.40)'
+           : pct < 0.75 ? 'rgba(0,212,255,0.65)'
+                        : 'rgba(0,212,255,0.88)';
+    }
+    ctx.fillStyle = fill;
+    ctx.beginPath();
+    ctx.roundRect ? ctx.roundRect(x, y, CELL, CELL, 2) : ctx.rect(x, y, CELL, CELL);
+    ctx.fill();
+  }
+
+  // Store meta for tooltip
+  canvas._hm = { startWd, nDays, year, LW, LH, STEP, CELL, dt };
+
+  drawHmapLegend();
+}
+
+function drawHmapLegend() {
+  const c = document.getElementById('hmap-lgd');
+  const r = window.devicePixelRatio || 1;
+  const w = 90, h = 12;
+  c.width = w * r; c.height = h * r;
+  c.style.width = w + 'px'; c.style.height = h + 'px';
+  const ctx = c.getContext('2d');
+  ctx.scale(r, r);
+  const cols = ['rgba(255,255,255,0.06)','rgba(0,212,255,0.18)','rgba(0,212,255,0.4)','rgba(0,212,255,0.7)','#00ff88'];
+  const cw = 14;
+  cols.forEach((col, i) => {
+    ctx.fillStyle = col;
+    ctx.beginPath();
+    ctx.roundRect ? ctx.roundRect(i * (cw + 2), 0, cw, h, 2) : ctx.rect(i * (cw + 2), 0, cw, h);
+    ctx.fill();
+  });
+}
+
+function handleHmapPointer(canvas, clientX, clientY) {
+  const meta = canvas._hm;
+  if (!meta) return;
+  const rect = canvas.getBoundingClientRect();
+  const mx = clientX - rect.left;
+  const my = clientY - rect.top;
+  const col = Math.floor((mx - meta.LW) / meta.STEP);
+  const row = Math.floor((my - meta.LH) / meta.STEP);
+  if (col < 0 || row < 0 || row >= 7) { clearHmapTip(); return; }
+  const d = col * 7 + row - meta.startWd;
+  if (d < 0 || d >= meta.nDays) { clearHmapTip(); return; }
+  const date  = new Date(meta.year, 0, 1 + d);
+  const total = meta.dt[d] || 0;
+  document.getElementById('hmap-tip').textContent =
+    (date.getMonth()+1) + '月' + date.getDate() + '日：' +
+    (total > 0 ? Math.round(total) + ' ml' : '無記錄');
+}
+
+function clearHmapTip() { document.getElementById('hmap-tip').textContent = ''; }
+
+const hmapCanvas = document.getElementById('hmap-canvas');
+hmapCanvas.addEventListener('mousemove', function(e) { handleHmapPointer(this, e.clientX, e.clientY); });
+hmapCanvas.addEventListener('mouseleave', clearHmapTip);
+hmapCanvas.addEventListener('touchstart', function(e) {
+  handleHmapPointer(this, e.touches[0].clientX, e.touches[0].clientY);
+}, { passive: true });
+hmapCanvas.addEventListener('touchend', clearHmapTip);
+
+document.getElementById('yr-prev').addEventListener('click', () => {
+  curHmapYear--;
+  document.getElementById('yr-next').disabled = false;
+  loadYearHeatmap(curHmapYear);
+});
+document.getElementById('yr-next').addEventListener('click', () => {
+  if (curHmapYear >= now.getFullYear()) return;
+  curHmapYear++;
+  loadYearHeatmap(curHmapYear);
+});
 
 // ─── Helpers ───────────────────────────────────────────────────────────────
 
@@ -184,32 +389,26 @@ function aggregateByHourBand(entries) {
 
 function aggregateByWeekday(dailyTotals, y, m) {
   const wd = Array.from({length: 7}, () => []);
-  for (let i = 0; i < dailyTotals.length; i++) {
-    if (dailyTotals[i] > 0)
-      wd[new Date(y, m - 1, i + 1).getDay()].push(dailyTotals[i]);
-  }
-  const order  = [1, 2, 3, 4, 5, 6, 0];
-  const labels = ['一', '二', '三', '四', '五', '六', '日'];
-  const avgs = order.map(i => {
+  for (let i = 0; i < dailyTotals.length; i++)
+    if (dailyTotals[i] > 0) wd[new Date(y, m - 1, i + 1).getDay()].push(dailyTotals[i]);
+  const order = [1, 2, 3, 4, 5, 6, 0];
+  const avgs  = order.map(i => {
     const arr = wd[i];
     return arr.length ? arr.reduce((a, b) => a + b, 0) / arr.length : 0;
   });
-  return { avgs, labels };
+  return { avgs, labels: ['一', '二', '三', '四', '五', '六', '日'] };
 }
 
 function calcMaxStreak(dailyTotals, goal) {
   let max = 0, cur = 0;
-  for (const v of dailyTotals) {
-    if (v >= goal) { if (++cur > max) max = cur; } else cur = 0;
-  }
+  for (const v of dailyTotals) { if (v >= goal) { if (++cur > max) max = cur; } else cur = 0; }
   return max;
 }
 
 function calcMaxGapHours(entries) {
   const ts = entries
     .filter(e => e.ts && !isNaN(new Date(e.ts).getTime()))
-    .map(e => new Date(e.ts).getTime())
-    .sort((a, b) => a - b);
+    .map(e => new Date(e.ts).getTime()).sort((a, b) => a - b);
   if (ts.length < 2) return 0;
   let max = 0;
   for (let i = 1; i < ts.length; i++) max = Math.max(max, ts[i] - ts[i - 1]);
@@ -233,16 +432,12 @@ function bestDrinkDay(entries) {
 
 // ─── Canvas Charts ──────────────────────────────────────────────────────────
 
-function dpr() { return window.devicePixelRatio || 1; }
-
 function setupCanvas(canvas) {
-  const r = dpr();
+  const r = window.devicePixelRatio || 1;
   const w = canvas.parentElement.clientWidth || 300;
   const h = canvas.height || 180;
-  canvas.width  = w * r;
-  canvas.height = h * r;
-  canvas.style.width  = w + 'px';
-  canvas.style.height = h + 'px';
+  canvas.width  = w * r; canvas.height = h * r;
+  canvas.style.width = w + 'px'; canvas.style.height = h + 'px';
   const ctx = canvas.getContext('2d');
   ctx.scale(r, r);
   return { ctx, w, h: canvas.height / r };
@@ -251,8 +446,7 @@ function setupCanvas(canvas) {
 function drawDailyChart(canvas, dailyTotals, goal) {
   const { ctx, w, h } = setupCanvas(canvas);
   const pad = { t: 12, r: 8, b: 30, l: 40 };
-  const cw = w - pad.l - pad.r;
-  const ch = h - pad.t - pad.b;
+  const cw = w - pad.l - pad.r, ch = h - pad.t - pad.b;
   const n = dailyTotals.length;
   const maxVal = Math.max(goal, ...dailyTotals, 1);
   const barW = Math.max(2, (cw / n) - 2);
@@ -261,8 +455,7 @@ function drawDailyChart(canvas, dailyTotals, goal) {
 
   const gy = pad.t + ch * (1 - goal / maxVal);
   ctx.strokeStyle = 'rgba(0,255,136,0.3)';
-  ctx.setLineDash([4, 4]);
-  ctx.lineWidth = 1;
+  ctx.setLineDash([4, 4]); ctx.lineWidth = 1;
   ctx.beginPath(); ctx.moveTo(pad.l, gy); ctx.lineTo(pad.l + cw, gy); ctx.stroke();
   ctx.setLineDash([]);
 
@@ -279,11 +472,9 @@ function drawDailyChart(canvas, dailyTotals, goal) {
   ctx.fillStyle = '#8ca8b8';
   ctx.font = '10px -apple-system, sans-serif';
   ctx.textAlign = 'center';
-  for (let i = 0; i < n; i++) {
-    if (i === 0 || (i + 1) % 5 === 0) {
+  for (let i = 0; i < n; i++)
+    if (i === 0 || (i + 1) % 5 === 0)
       ctx.fillText(i + 1, pad.l + i * (barW + gap) + barW / 2, h - pad.b + 14);
-    }
-  }
   ctx.textAlign = 'right';
   [0, 0.5, 1].forEach(f => {
     const v = Math.round(maxVal * f);
@@ -295,27 +486,22 @@ function drawDailyChart(canvas, dailyTotals, goal) {
 function drawHourChart(canvas, bands, labels) {
   const { ctx, w, h } = setupCanvas(canvas);
   const pad = { t: 8, r: 50, b: 8, l: 62 };
-  const cw = w - pad.l - pad.r;
-  const ch = h - pad.t - pad.b;
-  const n = bands.length;
-  const maxVal = Math.max(...bands, 1);
-  const barH = Math.max(2, ch / n - 4);
-  const gap  = (ch - barH * n) / (n - 1 || 1);
+  const cw = w - pad.l - pad.r, ch = h - pad.t - pad.b;
+  const n = bands.length, maxVal = Math.max(...bands, 1);
+  const barH = Math.max(2, ch / n - 4), gap = (ch - barH * n) / (n - 1 || 1);
   ctx.clearRect(0, 0, w, h);
   ctx.font = '10px -apple-system, sans-serif';
 
   bands.forEach((v, i) => {
     const y  = pad.t + i * (barH + gap);
     const bw = v > 0 ? Math.max(2, (v / maxVal) * cw) : 2;
-    ctx.fillStyle = '#8ca8b8';
-    ctx.textAlign = 'right';
+    ctx.fillStyle = '#8ca8b8'; ctx.textAlign = 'right';
     ctx.fillText(labels[i], pad.l - 5, y + barH / 2 + 4);
     ctx.fillStyle = v > 0 ? '#00d4ff' : 'rgba(255,255,255,0.1)';
     ctx.beginPath();
     ctx.roundRect ? ctx.roundRect(pad.l, y, bw, barH, 3) : ctx.rect(pad.l, y, bw, barH);
     ctx.fill();
-    ctx.fillStyle = '#8ca8b8';
-    ctx.textAlign = 'left';
+    ctx.fillStyle = '#8ca8b8'; ctx.textAlign = 'left';
     ctx.fillText(v + ' 次', pad.l + bw + 5, y + barH / 2 + 4);
   });
 }
@@ -323,18 +509,14 @@ function drawHourChart(canvas, bands, labels) {
 function drawWeekChart(canvas, avgs, labels, goal) {
   const { ctx, w, h } = setupCanvas(canvas);
   const pad = { t: 12, r: 8, b: 28, l: 36 };
-  const cw = w - pad.l - pad.r;
-  const ch = h - pad.t - pad.b;
-  const n = labels.length;
-  const maxVal = Math.max(goal, ...avgs, 1);
-  const barW = Math.max(4, (cw / n) - 4);
-  const gap  = (cw - barW * n) / (n - 1 || 1);
+  const cw = w - pad.l - pad.r, ch = h - pad.t - pad.b;
+  const n = labels.length, maxVal = Math.max(goal, ...avgs, 1);
+  const barW = Math.max(4, (cw / n) - 4), gap = (cw - barW * n) / (n - 1 || 1);
   ctx.clearRect(0, 0, w, h);
 
   const gy = pad.t + ch * (1 - goal / maxVal);
   ctx.strokeStyle = 'rgba(0,255,136,0.25)';
-  ctx.setLineDash([4, 4]);
-  ctx.lineWidth = 1;
+  ctx.setLineDash([4, 4]); ctx.lineWidth = 1;
   ctx.beginPath(); ctx.moveTo(pad.l, gy); ctx.lineTo(pad.l + cw, gy); ctx.stroke();
   ctx.setLineDash([]);
 
@@ -349,12 +531,10 @@ function drawWeekChart(canvas, avgs, labels, goal) {
   });
 
   ctx.fillStyle = '#8ca8b8';
-  ctx.font = '11px -apple-system, sans-serif';
-  ctx.textAlign = 'center';
+  ctx.font = '11px -apple-system, sans-serif'; ctx.textAlign = 'center';
   labels.forEach((l, i) => {
     ctx.fillText(l, pad.l + i * (barW + gap) + barW / 2, h - pad.b + 14);
   });
-
   ctx.textAlign = 'right';
   [0, 0.5, 1].forEach(f => {
     const v = Math.round(maxVal * f);
@@ -372,11 +552,8 @@ function toggleLog() {
 }
 
 function setPageSize(n) {
-  _logPageSize = n;
-  _logPage = 1;
-  document.querySelectorAll('.ps-btn').forEach(b => {
-    b.classList.toggle('active', +b.dataset.ps === n);
-  });
+  _logPageSize = n; _logPage = 1;
+  document.querySelectorAll('.ps-btn').forEach(b => b.classList.toggle('active', +b.dataset.ps === n));
   renderLogPage();
 }
 
@@ -389,8 +566,7 @@ function goPage(delta) {
 function renderLogPage() {
   const total = _logSorted.length;
   const pages = Math.ceil(total / _logPageSize) || 1;
-  const start = (_logPage - 1) * _logPageSize;
-  const show  = _logSorted.slice(start, start + _logPageSize);
+  const show  = _logSorted.slice((_logPage - 1) * _logPageSize, _logPage * _logPageSize);
 
   document.getElementById('log-empty').style.display  = total === 0 ? '' : 'none';
   document.getElementById('log-table').style.display  = total > 0  ? '' : 'none';
@@ -415,11 +591,10 @@ function renderLogPage() {
 
 function updateToggle() {
   const btn = document.getElementById('log-toggle');
-  const n   = _logSorted.length;
   btn.textContent = (_logExpanded ? '▼' : '▶') + ' 詳細記錄 ';
   const sp = document.createElement('span');
   sp.id = 'log-count';
-  sp.textContent = n > 0 ? '（' + n + ' 筆）' : '';
+  sp.textContent = _logSorted.length > 0 ? '（' + _logSorted.length + ' 筆）' : '';
   btn.appendChild(sp);
 }
 
@@ -447,8 +622,7 @@ function render() {
 function renderEmpty(msg) {
   ['daily-empty','hour-empty','week-empty','log-empty'].forEach(id => {
     const el = document.getElementById(id);
-    el.textContent = msg;
-    el.style.display = '';
+    el.textContent = msg; el.style.display = '';
   });
   ['daily-chart','hour-chart','week-chart','log-table','pagination'].forEach(id => {
     document.getElementById(id).style.display = 'none';
@@ -457,30 +631,26 @@ function renderEmpty(msg) {
    'a-peak','a-count','a-gap','a-day'].forEach(id => {
     document.getElementById(id).textContent = '--';
   });
-  _logSorted = [];
-  updateToggle();
+  _logSorted = []; updateToggle();
 }
 
 function renderData(entries) {
   _cachedEntries = entries;
 
-  // Daily chart
   const dailyTotals = aggregateByDay(entries, curYear, curMonth);
   const hasData = dailyTotals.some(v => v > 0);
   document.getElementById('daily-chart').style.display = hasData ? '' : 'none';
   document.getElementById('daily-empty').style.display = hasData ? 'none' : '';
   if (hasData) drawDailyChart(document.getElementById('daily-chart'), dailyTotals, dailyGoal);
 
-  // Stats (6 cells)
-  const recorded  = dailyTotals.filter(v => v > 0);
+  const recorded   = dailyTotals.filter(v => v > 0);
   const monthTotal = recorded.reduce((a, b) => a + b, 0);
   const goalDays   = recorded.filter(v => v >= dailyGoal).length;
   const avgDay     = recorded.length ? Math.round(monthTotal / recorded.length) : 0;
   const maxDay     = recorded.length ? Math.round(Math.max(...recorded)) : 0;
   const streak     = calcMaxStreak(dailyTotals, dailyGoal);
-  const validDrinks = entries.filter(e => e.ml > 0);
-  const avgPer      = validDrinks.length
-    ? Math.round(validDrinks.reduce((a, e) => a + e.ml, 0) / validDrinks.length) : 0;
+  const validD     = entries.filter(e => e.ml > 0);
+  const avgPer     = validD.length ? Math.round(validD.reduce((a, e) => a + e.ml, 0) / validD.length) : 0;
   document.getElementById('s-total').textContent  = Math.round(monthTotal) + ' ml';
   document.getElementById('s-days').textContent   = goalDays + ' / ' + recorded.length;
   document.getElementById('s-avg').textContent    = avgDay + ' ml';
@@ -488,40 +658,35 @@ function renderData(entries) {
   document.getElementById('s-streak').textContent = streak + ' 天';
   document.getElementById('s-per').textContent    = avgPer + ' ml';
 
-  // Deep analysis
   const synced = entries.filter(e => e.ts && !isNaN(new Date(e.ts).getTime()));
   const { bands, labels } = aggregateByHourBand(synced);
-  const maxBand = Math.max(...bands);
+  const maxBand   = Math.max(...bands);
   const peakBands = maxBand > 0 ? labels.filter((_, i) => bands[i] === maxBand) : [];
-  document.getElementById('a-peak').textContent =
-    peakBands.length === 0 ? '--' :
-    peakBands.length === 1 ? peakBands[0] : peakBands[0] + ' 等';
+  document.getElementById('a-peak').textContent  =
+    peakBands.length === 0 ? '--' : peakBands.length === 1 ? peakBands[0] : peakBands[0] + ' 等';
   document.getElementById('a-count').textContent = entries.length + ' 次';
   const gap = calcMaxGapHours(synced);
   document.getElementById('a-gap').textContent   = gap > 0 ? gap.toFixed(1) + ' 小時' : '--';
   document.getElementById('a-day').textContent   = bestDrinkDay(synced);
 
-  // Hourly chart
   const hasHour = bands.some(v => v > 0);
   document.getElementById('hour-chart').style.display = hasHour ? '' : 'none';
   document.getElementById('hour-empty').style.display = hasHour ? 'none' : '';
   if (hasHour) drawHourChart(document.getElementById('hour-chart'), bands, labels);
 
-  // Weekday chart
   const { avgs, labels: wl } = aggregateByWeekday(dailyTotals, curYear, curMonth);
   const hasWeek = avgs.some(v => v > 0);
   document.getElementById('week-chart').style.display = hasWeek ? '' : 'none';
   document.getElementById('week-empty').style.display = hasWeek ? 'none' : '';
   if (hasWeek) drawWeekChart(document.getElementById('week-chart'), avgs, wl, dailyGoal);
 
-  // Log table
   _logSorted = entries.slice().sort((a, b) => tsMs(b) - tsMs(a));
   _logPage = 1;
   renderLogPage();
   updateToggle();
 }
 
-// Navigation
+// Month navigation
 document.getElementById('btn-prev').addEventListener('click', () => {
   if (--curMonth < 1) { curMonth = 12; curYear--; }
   render();
@@ -531,15 +696,15 @@ document.getElementById('btn-next').addEventListener('click', () => {
   render();
 });
 
-// Resize (debounced)
+// Resize
 let _resizeTimer = null;
 window.addEventListener('resize', () => {
   clearTimeout(_resizeTimer);
   _resizeTimer = setTimeout(() => {
-    const dt = aggregateByDay(_cachedEntries, curYear, curMonth);
     const dc = document.getElementById('daily-chart');
     const hc = document.getElementById('hour-chart');
     const wc = document.getElementById('week-chart');
+    const dt = aggregateByDay(_cachedEntries, curYear, curMonth);
     if (dc.style.display !== 'none') drawDailyChart(dc, dt, dailyGoal);
     if (hc.style.display !== 'none') {
       const synced = _cachedEntries.filter(e => e.ts && !isNaN(new Date(e.ts).getTime()));
@@ -550,6 +715,8 @@ window.addEventListener('resize', () => {
       const { avgs, labels } = aggregateByWeekday(dt, curYear, curMonth);
       drawWeekChart(wc, avgs, labels, dailyGoal);
     }
+    if (_hmapCache[curHmapYear] && document.getElementById('hmap-wrap').style.display !== 'none')
+      drawHeatmap(curHmapYear, _hmapCache[curHmapYear]);
   }, 150);
 });
 </script>
