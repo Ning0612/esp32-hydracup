@@ -172,7 +172,8 @@ nav a .ni { display: block; font-size: 1.5em; margin-bottom: 1px; }
 input[type="text"],
 input[type="number"],
 input[type="password"],
-input[type="url"] {
+input[type="url"],
+select {
   width: 100%;
   padding: 10px 12px;
   background: rgba(255,255,255,0.05);
@@ -183,8 +184,20 @@ input[type="url"] {
   outline: none;
   transition: border-color 0.2s;
   -webkit-appearance: none;
+  appearance: none;
 }
-input:focus { border-color: var(--accent); }
+input:focus, select:focus { border-color: var(--accent); }
+select {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%238ca8b8' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+  padding-right: 36px;
+  cursor: pointer;
+}
+option {
+  background-color: var(--bg);
+  color: var(--text);
+}
 .checkbox-row {
   display: flex;
   align-items: center;
