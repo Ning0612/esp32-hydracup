@@ -1,0 +1,369 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>歷史記錄 — 水杯追蹤器</title>
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<div class="container">
+  <div class="page-title">📊 飲水歷史</div>
+
+  <!-- 月份導航 -->
+  <div class="month-nav">
+    <button id="btn-prev">&#8249;</button>
+    <span class="month-label" id="month-label">--</span>
+    <button id="btn-next">&#8250;</button>
+  </div>
+
+  <!-- 每日飲水量 -->
+  <div class="card">
+    <div class="label" style="margin-bottom:10px">每日飲水量</div>
+    <div class="chart-wrap">
+      <canvas id="daily-chart" height="180"></canvas>
+    </div>
+    <div id="daily-empty" class="empty-state" style="display:none">本月無飲水記錄</div>
+  </div>
+
+  <!-- 月統計摘要 -->
+  <div class="stats-grid">
+    <div class="stat-cell">
+      <div class="label">本月總量</div>
+      <div class="num-lg" id="s-total">-- ml</div>
+    </div>
+    <div class="stat-cell">
+      <div class="label">達標天數</div>
+      <div class="num-lg" id="s-days">-- / --</div>
+      <div class="sub">有記錄天數</div>
+    </div>
+    <div class="stat-cell">
+      <div class="label">平均每日</div>
+      <div class="num-lg" id="s-avg">-- ml</div>
+    </div>
+    <div class="stat-cell">
+      <div class="label">最高單日</div>
+      <div class="num-lg" id="s-max">-- ml</div>
+    </div>
+  </div>
+
+  <!-- 時段分布 -->
+  <div class="card">
+    <div class="label" style="margin-bottom:10px">時段分布</div>
+    <div class="chart-wrap">
+      <canvas id="hour-chart" height="120"></canvas>
+    </div>
+    <div id="hour-empty" class="empty-state" style="display:none">無時間同步記錄</div>
+  </div>
+
+  <!-- 飲水記錄列表 -->
+  <div class="card">
+    <div class="label" style="margin-bottom:10px">詳細記錄</div>
+    <div id="log-empty" class="empty-state" style="display:none">本月無飲水記錄</div>
+    <div style="overflow-x:auto">
+      <table class="log-table" id="log-table" style="display:none">
+        <thead><tr>
+          <th>時間</th>
+          <th>飲水量</th>
+          <th>當日累計</th>
+        </tr></thead>
+        <tbody id="log-body"></tbody>
+      </table>
+    </div>
+    <div class="sub" id="log-more" style="display:none;text-align:center;padding:10px">僅顯示最新 200 筆</div>
+  </div>
+</div>
+
+<nav>
+  <a href="/"><span class="ni">🏠</span>首頁</a>
+  <a href="/history" class="active"><span class="ni">📊</span>歷史</a>
+  <a href="/settings"><span class="ni">⚙️</span>設定</a>
+</nav>
+
+<script>
+const now = new Date();
+let curYear  = now.getFullYear();
+let curMonth = now.getMonth() + 1;
+let dailyGoal = 2000;
+
+// Fetch goal once
+fetch('/api/config').then(r => r.json()).then(d => {
+  if (d.dailyGoalMl > 0) dailyGoal = d.dailyGoalMl;
+  render();
+}).catch(() => render());
+
+function monthStr(y, m) {
+  return y + '-' + String(m).padStart(2, '0');
+}
+function daysInMonth(y, m) {
+  return new Date(y, m, 0).getDate();
+}
+function fmtTs(ts) {
+  if (!ts) return '時間未同步';
+  const d = new Date(ts);
+  if (isNaN(d.getTime())) return '時間未同步';
+  return (d.getMonth()+1) + '/' + d.getDate() + ' ' +
+    String(d.getHours()).padStart(2,'0') + ':' + String(d.getMinutes()).padStart(2,'0');
+}
+
+function aggregateByDay(entries, y, m) {
+  const n = daysInMonth(y, m);
+  const totals = new Array(n).fill(0);
+  for (const e of entries) {
+    if (!e.ts) continue;
+    const d = new Date(e.ts);
+    if (isNaN(d.getTime())) continue;
+    if (d.getFullYear() !== y || d.getMonth() + 1 !== m) continue;
+    const day = d.getDate() - 1;
+    if (e.total > totals[day]) totals[day] = e.total;
+  }
+  return totals;
+}
+
+function aggregateByHourBand(entries) {
+  // 6 bands: 0-4, 4-8, 8-12, 12-16, 16-20, 20-24
+  const bands = [0, 0, 0, 0, 0, 0];
+  const labels = ['0–4', '4–8', '8–12', '12–16', '16–20', '20–24'];
+  for (const e of entries) {
+    if (!e.ts) continue;
+    const d = new Date(e.ts);
+    if (isNaN(d.getTime())) continue;
+    const h = d.getHours();
+    bands[Math.floor(h / 4)]++;
+  }
+  return { bands, labels };
+}
+
+// ─── Canvas Chart Helpers ──────────────────────────────────────────────────
+
+function dpr() { return window.devicePixelRatio || 1; }
+
+function setupCanvas(canvas) {
+  const r = dpr();
+  const w = canvas.parentElement.clientWidth || 300;
+  const h = canvas.height || 180;
+  canvas.width  = w * r;
+  canvas.height = h * r;
+  canvas.style.width  = w + 'px';
+  canvas.style.height = h + 'px';
+  const ctx = canvas.getContext('2d');
+  ctx.scale(r, r);
+  return { ctx, w, h: canvas.height / r };
+}
+
+function drawDailyChart(canvas, dailyTotals, goal) {
+  const { ctx, w, h } = setupCanvas(canvas);
+  const pad = { t: 12, r: 8, b: 30, l: 40 };
+  const cw = w - pad.l - pad.r;
+  const ch = h - pad.t - pad.b;
+  const n = dailyTotals.length;
+  const maxVal = Math.max(goal, ...dailyTotals, 1);
+  const barW = Math.max(2, (cw / n) - 2);
+  const gap  = (cw - barW * n) / (n - 1 || 1);
+
+  ctx.clearRect(0, 0, w, h);
+
+  // Goal line
+  const gy = pad.t + ch * (1 - goal / maxVal);
+  ctx.strokeStyle = 'rgba(0,255,136,0.3)';
+  ctx.setLineDash([4, 4]);
+  ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(pad.l, gy); ctx.lineTo(pad.l + cw, gy); ctx.stroke();
+  ctx.setLineDash([]);
+
+  // Bars
+  dailyTotals.forEach((v, i) => {
+    const x = pad.l + i * (barW + gap);
+    const bh = v > 0 ? Math.max(2, (v / maxVal) * ch) : 2;
+    const y  = pad.t + ch - bh;
+    ctx.fillStyle = v >= goal ? '#00ff88'
+                  : v > 0    ? '#00d4ff'
+                              : 'rgba(255,255,255,0.1)';
+    ctx.beginPath();
+    ctx.roundRect ? ctx.roundRect(x, y, barW, bh, 3) : ctx.rect(x, y, barW, bh);
+    ctx.fill();
+  });
+
+  // X axis labels (every 5 days)
+  ctx.fillStyle = '#8ca8b8';
+  ctx.font = '10px -apple-system, sans-serif';
+  ctx.textAlign = 'center';
+  for (let i = 0; i < n; i++) {
+    if (i === 0 || (i + 1) % 5 === 0) {
+      const x = pad.l + i * (barW + gap) + barW / 2;
+      ctx.fillText(i + 1, x, h - pad.b + 14);
+    }
+  }
+
+  // Y axis labels
+  ctx.textAlign = 'right';
+  [0, 0.5, 1].forEach(f => {
+    const v = Math.round(maxVal * f);
+    const y = pad.t + ch * (1 - f);
+    ctx.fillText(v >= 1000 ? (v/1000).toFixed(1) + 'k' : v, pad.l - 4, y + 3);
+  });
+}
+
+function drawHourChart(canvas, bands, labels) {
+  const { ctx, w, h } = setupCanvas(canvas);
+  const pad = { t: 8, r: 50, b: 8, l: 52 };
+  const cw = w - pad.l - pad.r;
+  const ch = h - pad.t - pad.b;
+  const n = bands.length;
+  const maxVal = Math.max(...bands, 1);
+  const barH = Math.max(2, ch / n - 4);
+  const gap  = (ch - barH * n) / (n - 1 || 1);
+
+  ctx.clearRect(0, 0, w, h);
+  ctx.font = '10px -apple-system, sans-serif';
+  ctx.fillStyle = '#8ca8b8';
+
+  bands.forEach((v, i) => {
+    const y = pad.t + i * (barH + gap);
+    const bw = v > 0 ? Math.max(2, (v / maxVal) * cw) : 2;
+
+    // Label
+    ctx.textAlign = 'right';
+    ctx.fillText(labels[i], pad.l - 5, y + barH / 2 + 4);
+
+    // Bar
+    ctx.fillStyle = v > 0 ? '#00d4ff' : 'rgba(255,255,255,0.1)';
+    ctx.beginPath();
+    ctx.roundRect ? ctx.roundRect(pad.l, y, bw, barH, 3) : ctx.rect(pad.l, y, bw, barH);
+    ctx.fill();
+
+    // Count
+    ctx.fillStyle = '#8ca8b8';
+    ctx.textAlign = 'left';
+    ctx.fillText(v + ' 次', pad.l + bw + 5, y + barH / 2 + 4);
+  });
+}
+
+// ─── Main Render ───────────────────────────────────────────────────────────
+
+function render() {
+  const month = monthStr(curYear, curMonth);
+  document.getElementById('month-label').textContent =
+    curYear + ' 年 ' + String(curMonth).padStart(2, '0') + ' 月';
+
+  // Disable next button if at current month
+  const todayY = now.getFullYear(), todayM = now.getMonth() + 1;
+  document.getElementById('btn-next').disabled =
+    curYear > todayY || (curYear === todayY && curMonth >= todayM);
+
+  fetch('/api/logs?month=' + month)
+    .then(r => r.json())
+    .then(j => {
+      if (!j.ok) { renderEmpty('API 錯誤：' + (j.error || '未知')); return; }
+      renderData(Array.isArray(j.entries) ? j.entries : []);
+    })
+    .catch(() => renderEmpty('連線失敗'));
+}
+
+function renderEmpty(msg) {
+  document.getElementById('daily-empty').textContent = msg;
+  document.getElementById('daily-empty').style.display = '';
+  document.getElementById('daily-chart').style.display = 'none';
+  document.getElementById('hour-empty').textContent = msg;
+  document.getElementById('hour-empty').style.display = '';
+  document.getElementById('hour-chart').style.display = 'none';
+  document.getElementById('log-empty').textContent = msg;
+  document.getElementById('log-empty').style.display = '';
+  document.getElementById('log-table').style.display = 'none';
+  document.getElementById('log-more').style.display = 'none';
+  document.getElementById('s-total').textContent = '--';
+  document.getElementById('s-days').textContent  = '--';
+  document.getElementById('s-avg').textContent   = '--';
+  document.getElementById('s-max').textContent   = '--';
+}
+
+function renderData(entries) {
+  _cachedEntries = entries;
+  // Daily chart
+  const dailyTotals = aggregateByDay(entries, curYear, curMonth);
+  const hasData = dailyTotals.some(v => v > 0);
+
+  document.getElementById('daily-chart').style.display = hasData ? '' : 'none';
+  document.getElementById('daily-empty').style.display = hasData ? 'none' : '';
+  if (hasData) drawDailyChart(document.getElementById('daily-chart'), dailyTotals, dailyGoal);
+
+  // Stats
+  const recorded = dailyTotals.filter(v => v > 0);
+  const monthTotal = recorded.reduce((a, b) => a + b, 0);
+  const goalDays   = recorded.filter(v => v >= dailyGoal).length;
+  const avgDay     = recorded.length > 0 ? Math.round(monthTotal / recorded.length) : 0;
+  const maxDay     = recorded.length > 0 ? Math.round(Math.max(...recorded)) : 0;
+  document.getElementById('s-total').textContent = Math.round(monthTotal) + ' ml';
+  document.getElementById('s-days').textContent  = goalDays + ' / ' + recorded.length;
+  document.getElementById('s-avg').textContent   = avgDay + ' ml';
+  document.getElementById('s-max').textContent   = maxDay + ' ml';
+
+  // Hourly chart
+  const synced = entries.filter(e => e.ts && !isNaN(new Date(e.ts).getTime()));
+  const { bands, labels } = aggregateByHourBand(synced);
+  const hasHour = bands.some(v => v > 0);
+  document.getElementById('hour-chart').style.display = hasHour ? '' : 'none';
+  document.getElementById('hour-empty').style.display = hasHour ? 'none' : '';
+  if (hasHour) drawHourChart(document.getElementById('hour-chart'), bands, labels);
+
+  // Log table (latest first, max 200)
+  const tsMs = e => { const t = e.ts ? new Date(e.ts).getTime() : NaN; return isNaN(t) ? 0 : t; };
+  const sorted = entries.slice().sort((a, b) => tsMs(b) - tsMs(a));
+  const show = sorted.slice(0, 200);
+  document.getElementById('log-more').style.display = entries.length > 200 ? '' : 'none';
+
+  if (show.length === 0) {
+    document.getElementById('log-empty').style.display = '';
+    document.getElementById('log-table').style.display = 'none';
+  } else {
+    document.getElementById('log-empty').style.display = 'none';
+    document.getElementById('log-table').style.display = '';
+    const tbody = document.getElementById('log-body');
+    tbody.innerHTML = '';
+    show.forEach(e => {
+      const tr = document.createElement('tr');
+      tr.innerHTML = '<td>' + fmtTs(e.ts) + '</td>' +
+        '<td><strong>' + Math.round(e.ml || 0) + ' ml</strong></td>' +
+        '<td><strong>' + Math.round(e.total || 0) + ' ml</strong></td>';
+      tbody.appendChild(tr);
+    });
+  }
+}
+
+// Navigation
+document.getElementById('btn-prev').addEventListener('click', () => {
+  curMonth--;
+  if (curMonth < 1) { curMonth = 12; curYear--; }
+  render();
+});
+document.getElementById('btn-next').addEventListener('click', () => {
+  curMonth++;
+  if (curMonth > 12) { curMonth = 1; curYear++; }
+  render();
+});
+
+// Redraw charts on resize (debounced)
+let _resizeTimer = null;
+window.addEventListener('resize', () => {
+  clearTimeout(_resizeTimer);
+  _resizeTimer = setTimeout(() => {
+  const dc = document.getElementById('daily-chart');
+  const hc = document.getElementById('hour-chart');
+  if (dc.style.display !== 'none') {
+    const dailyTotals = aggregateByDay(_cachedEntries, curYear, curMonth);
+    drawDailyChart(dc, dailyTotals, dailyGoal);
+  }
+  if (hc.style.display !== 'none') {
+    const { bands, labels } = aggregateByHourBand(_cachedEntries.filter(
+      e => e.ts && !isNaN(new Date(e.ts).getTime())
+    ));
+    drawHourChart(hc, bands, labels);
+  }
+  }, 150);
+});
+
+// Entries cache populated by renderData for use in resize handler
+let _cachedEntries = [];
+</script>
+</body>
+</html>

@@ -120,7 +120,7 @@ void setup() {
         appState.wifiConnected = true;
         appState.ipAddress     = wifiManager.getIP();
         dashboardServer.begin(scaleManager, configManager, appState, appConfig,
-                              buzzerController, reminderManager);
+                              buzzerController, reminderManager, LogFS);
         if (appConfig.ntpEnabled) timeManager.init(appConfig);
         discordNotifier.init(appState, appConfig);
         discordNotifier.notifyOnline(appState.ipAddress);

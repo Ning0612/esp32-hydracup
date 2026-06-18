@@ -1,0 +1,288 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>設定 — 水杯追蹤器</title>
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<div class="container">
+  <div class="page-title">⚙️ 設定</div>
+
+  <!-- 飲水目標 -->
+  <div class="section-title">飲水目標</div>
+  <div class="form-group">
+    <label>每日目標 (ml)</label>
+    <input type="number" id="dg" min="100" max="9999">
+  </div>
+
+  <!-- 提醒 -->
+  <div class="section-title">提醒</div>
+  <div class="checkbox-row">
+    <input type="checkbox" id="re"><label for="re">啟用提醒</label>
+  </div>
+  <div class="form-group">
+    <label>間隔（分鐘）</label>
+    <input type="number" id="ri" min="1" max="1440">
+  </div>
+  <div class="form-group">
+    <label>警報持續時間（秒，拿起杯子可提前停止）</label>
+    <input type="number" id="rat" min="5" max="3600">
+  </div>
+
+  <!-- 蜂鳴器 -->
+  <div class="section-title">蜂鳴器</div>
+  <div class="checkbox-row">
+    <input type="checkbox" id="be"><label for="be">啟用蜂鳴器</label>
+  </div>
+  <div class="form-group">
+    <label>頻率 (Hz)</label>
+    <input type="number" id="bf" min="500" max="5000">
+  </div>
+  <div class="form-group">
+    <label>音量 (%)</label>
+    <input type="number" id="bv" min="0" max="100">
+  </div>
+  <div class="form-group">
+    <label>持續時間 (ms)</label>
+    <input type="number" id="bd" min="50" max="2000">
+  </div>
+
+  <!-- 進階感測器 -->
+  <div class="section-title">進階感測器設定</div>
+  <div class="warn-banner">⚠️ 修改後需重新啟動才能生效。設定不當可能影響喝水偵測準確性，請謹慎調整。</div>
+  <div class="form-group">
+    <label>杯子存在閾值 (g)</label>
+    <input type="number" id="cpt" min="10" max="500" step="0.5">
+  </div>
+  <div class="form-group">
+    <label>穩定容差 (g)</label>
+    <input type="number" id="stg" min="0.5" max="20" step="0.5">
+  </div>
+  <div class="form-group">
+    <label>穩定持續時間 (ms)</label>
+    <input type="number" id="sdm" min="500" max="10000" step="100">
+  </div>
+  <div class="form-group">
+    <label>最小飲水量 (ml)</label>
+    <input type="number" id="mnd" min="5" max="100">
+  </div>
+  <div class="form-group">
+    <label>最大飲水量 (ml)</label>
+    <input type="number" id="mxd" min="50" max="1000" step="10">
+  </div>
+
+  <!-- WiFi -->
+  <div class="section-title">WiFi（變更後需重新啟動）</div>
+  <div class="form-group">
+    <label>SSID</label>
+    <input type="text" id="ws">
+  </div>
+  <div class="form-group">
+    <label>密碼（留空 = 不修改）</label>
+    <input type="password" id="wp" placeholder="留空 = 不修改">
+  </div>
+
+  <!-- Discord -->
+  <div class="section-title">Discord Webhook（選填）</div>
+  <div class="form-group">
+    <label>Webhook URL</label>
+    <input type="url" id="wh" placeholder="https://discord.com/api/webhooks/...">
+  </div>
+
+  <!-- NTP -->
+  <div class="section-title">NTP / 時區（變更後需重新啟動）</div>
+  <div class="checkbox-row">
+    <input type="checkbox" id="ne"><label for="ne">啟用 NTP 時間同步</label>
+  </div>
+  <div class="form-group">
+    <label>伺服器 1</label>
+    <input type="text" id="n1">
+  </div>
+  <div class="form-group">
+    <label>伺服器 2</label>
+    <input type="text" id="n2">
+  </div>
+  <div class="form-group">
+    <label>時區</label>
+    <input type="text" id="tz" placeholder="Asia/Taipei">
+  </div>
+
+  <button class="btn btn-primary" onclick="save()">儲存設定</button>
+  <button class="btn btn-danger" onclick="reboot()">重新啟動裝置</button>
+  <div class="msg" id="msg"></div>
+
+  <hr class="divider">
+
+  <!-- 校正區塊 -->
+  <div id="calibration">
+    <div class="page-title" style="font-size:1.05em;margin-top:0">🔧 秤重校正</div>
+
+    <div class="card" style="text-align:center">
+      <div class="label">目前校正因子</div>
+      <div class="factor-badge" id="cur-factor">--</div>
+      <div style="margin-top:16px">
+        <div class="label">即時重量</div>
+        <div class="weight-display-lg" id="cal-weight">-- g</div>
+      </div>
+    </div>
+
+    <div class="section-title">步驟 1：歸零</div>
+    <p class="sub" style="margin:0 0 10px">移除所有重物後按下歸零。</p>
+    <button class="btn btn-secondary" onclick="doTare()">歸零</button>
+    <div class="msg" id="tare-msg"></div>
+
+    <div class="section-title">步驟 2：輸入已知重量</div>
+    <p class="sub" style="margin:0 0 10px">放上已知重量的砝碼後輸入克數並校正。</p>
+    <div class="form-group">
+      <label>已知重量 (g)</label>
+      <input type="number" id="known-w" min="1" max="5000" step="0.1" placeholder="例如 500">
+    </div>
+    <button class="btn btn-primary" onclick="doCalibrate()">校正</button>
+    <div class="msg" id="cal-msg"></div>
+
+    <div class="card" id="cal-result" style="display:none;margin-top:10px">
+      <div class="label" style="margin-bottom:8px">校正結果</div>
+      <div id="cal-result-body" style="font-size:.88em;line-height:2;color:var(--text2)"></div>
+    </div>
+  </div>
+</div>
+
+<nav>
+  <a href="/"><span class="ni">🏠</span>首頁</a>
+  <a href="/history"><span class="ni">📊</span>歷史</a>
+  <a href="/settings" class="active"><span class="ni">⚙️</span>設定</a>
+</nav>
+
+<script>
+let wtTimer = null;
+
+function showMsg(id, text, ok) {
+  const el = document.getElementById(id);
+  el.textContent = text;
+  el.className = 'msg ' + (ok ? 'ok' : 'err');
+}
+
+function load() {
+  fetch('/api/config').then(r => r.json()).then(d => {
+    if (!d.ok) { showMsg('msg', '設定載入失敗：' + (d.error || '未知'), false); return; }
+    document.getElementById('dg').value   = d.dailyGoalMl || 2000;
+    document.getElementById('ri').value   = d.reminderIntervalMin || 60;
+    document.getElementById('rat').value  = d.reminderAlertTimeoutSec || 60;
+    document.getElementById('re').checked = !!d.reminderEnabled;
+    document.getElementById('be').checked = !!d.buzzerEnabled;
+    document.getElementById('bf').value   = d.buzzerFrequencyHz || 2000;
+    document.getElementById('bv').value   = d.buzzerVolumePercent != null ? d.buzzerVolumePercent : 50;
+    document.getElementById('bd').value   = d.buzzerDurationMs || 150;
+    document.getElementById('ws').value   = d.wifiSsid || '';
+    const url = d.discordWebhookUrl || '';
+    document.getElementById('wh').value   = url ? url.replace(/\/[^/]+$/, '/****') : '';
+    document.getElementById('ne').checked = !!d.ntpEnabled;
+    document.getElementById('n1').value   = d.ntpServer1 || 'pool.ntp.org';
+    document.getElementById('n2').value   = d.ntpServer2 || 'time.google.com';
+    document.getElementById('tz').value   = d.timezone || 'Asia/Taipei';
+    document.getElementById('cpt').value  = d.cupPresentThresholdGram != null ? d.cupPresentThresholdGram : 80;
+    document.getElementById('stg').value  = d.stableToleranceGram != null ? d.stableToleranceGram : 3;
+    document.getElementById('sdm').value  = d.stableDurationMs || 3000;
+    document.getElementById('mnd').value  = d.minDrinkDeltaMl != null ? d.minDrinkDeltaMl : 20;
+    document.getElementById('mxd').value  = d.maxDrinkDeltaMl != null ? d.maxDrinkDeltaMl : 500;
+    if (d.calibrationFactor != null)
+      document.getElementById('cur-factor').textContent = (+d.calibrationFactor).toFixed(4);
+  }).catch(() => showMsg('msg', '設定載入失敗，請重新整理', false));
+}
+
+function save() {
+  const wp = document.getElementById('wp').value;
+  const wh = document.getElementById('wh').value;
+  const body = {
+    dailyGoalMl:             parseInt(document.getElementById('dg').value)    || 2000,
+    reminderIntervalMin:     parseInt(document.getElementById('ri').value)    || 60,
+    reminderAlertTimeoutSec: parseInt(document.getElementById('rat').value)   || 60,
+    reminderEnabled:         document.getElementById('re').checked,
+    buzzerEnabled:           document.getElementById('be').checked,
+    buzzerFrequencyHz:       parseInt(document.getElementById('bf').value)    || 2000,
+    buzzerVolumePercent:     parseInt(document.getElementById('bv').value, 10) || 0,
+    buzzerDurationMs:        parseInt(document.getElementById('bd').value)    || 150,
+    wifiSsid:                document.getElementById('ws').value,
+    ntpEnabled:              document.getElementById('ne').checked,
+    ntpServer1:              document.getElementById('n1').value,
+    ntpServer2:              document.getElementById('n2').value,
+    timezone:                document.getElementById('tz').value,
+    cupPresentThresholdGram: parseFloat(document.getElementById('cpt').value) || 80,
+    stableToleranceGram:     parseFloat(document.getElementById('stg').value) || 3,
+    stableDurationMs:        parseInt(document.getElementById('sdm').value)   || 3000,
+    minDrinkDeltaMl:         parseFloat(document.getElementById('mnd').value) || 20,
+    maxDrinkDeltaMl:         parseFloat(document.getElementById('mxd').value) || 500
+  };
+  if (wp) body.wifiPassword = wp;
+  if (wh.indexOf('****') < 0) body.discordWebhookUrl = wh;
+
+  fetch('/api/config', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body)
+  }).then(r => r.json()).then(j => {
+    showMsg('msg',
+      j.ok ? (j.reboot_required ? '儲存成功。部分設定需重新啟動後生效。' : '儲存成功！') :
+              '錯誤：' + (j.error || '未知'), j.ok);
+  }).catch(() => showMsg('msg', '連線失敗', false));
+}
+
+function reboot() {
+  fetch('/api/reboot', { method: 'POST' })
+    .then(() => showMsg('msg', '裝置重新啟動中…', true))
+    .catch(() => {});
+}
+
+// Calibration
+function fetchWeight() {
+  fetch('/api/weight').then(r => r.json()).then(d => {
+    if (d.ok && d.weight_g != null)
+      document.getElementById('cal-weight').textContent = (+d.weight_g).toFixed(1) + ' g';
+  }).catch(() => {});
+}
+
+function doTare() {
+  fetch('/api/tare', { method: 'POST' }).then(r => r.json()).then(d => {
+    showMsg('tare-msg', d.ok ? '歸零完成' : '錯誤：' + d.error, d.ok);
+  }).catch(() => showMsg('tare-msg', '連線失敗', false));
+}
+
+function doCalibrate() {
+  const kw = parseFloat(document.getElementById('known-w').value);
+  if (!kw || kw <= 0) { showMsg('cal-msg', '請輸入有效的已知重量', false); return; }
+  fetch('/api/calibrate', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ known_weight_g: kw })
+  }).then(r => r.json()).then(d => {
+    if (d.ok) {
+      showMsg('cal-msg', '校正完成', true);
+      const cf = +d.calibration_factor, cw = +d.current_weight_g;
+      document.getElementById('cur-factor').textContent = cf.toFixed(4);
+      document.getElementById('cal-result-body').innerHTML =
+        '校正因子：<strong style="color:var(--success)">' + cf.toFixed(4) + '</strong><br>' +
+        '當前讀數：<strong>' + cw.toFixed(1) + ' g</strong><br>' +
+        '已知重量：<strong>' + kw.toFixed(1) + ' g</strong><br>' +
+        '誤差：<strong>' + Math.abs(cw - kw).toFixed(1) + ' g</strong>';
+      document.getElementById('cal-result').style.display = '';
+    } else {
+      showMsg('cal-msg', '錯誤：' + d.error, false);
+    }
+  }).catch(() => showMsg('cal-msg', '連線失敗', false));
+}
+
+// Poll weight while settings page is open
+wtTimer = setInterval(fetchWeight, 1000);
+fetchWeight();
+window.addEventListener('beforeunload', () => clearInterval(wtTimer));
+
+// Jump to calibration if URL has #calibration
+if (location.hash === '#calibration')
+  document.getElementById('calibration').scrollIntoView({ behavior: 'smooth' });
+
+load();
+</script>
+</body>
+</html>

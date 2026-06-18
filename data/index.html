@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>水杯追蹤器</title>
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<div class="container">
+  <div class="page-title">💧 水杯追蹤器</div>
+
+  <!-- 即時重量 -->
+  <div class="card">
+    <div class="label">即時重量</div>
+    <div class="num-xl" id="wt">-- g</div>
+    <span class="state-chip" id="st">--</span>
+  </div>
+
+  <!-- 今日飲水 -->
+  <div class="card">
+    <div class="label">今日飲水</div>
+    <div class="num-xl"><span id="today">0</span><span style="font-size:.45em;color:var(--text2);margin-left:6px">ml</span></div>
+    <div class="progress-bg"><div class="progress-fill" id="bar" style="width:0%"></div></div>
+    <div class="sub" id="pct">0% / 目標 -- ml（0 次）</div>
+  </div>
+
+  <!-- 提醒資訊 -->
+  <div class="card">
+    <div style="display:flex;justify-content:space-between;gap:16px">
+      <div style="flex:1">
+        <div class="label">上次喝水</div>
+        <div class="num-sm" id="last">--</div>
+      </div>
+      <div style="flex:1;text-align:right">
+        <div class="label">下次提醒</div>
+        <div class="num-sm" id="next" style="color:var(--success)">--</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 系統狀態 -->
+  <div class="card">
+    <div class="label" style="margin-bottom:8px">系統狀態</div>
+    <div class="status-row">
+      <div class="dot" id="d-ntp"></div>
+      <span class="status-label">NTP 時間同步</span>
+      <span class="status-val" id="v-ntp">--</span>
+    </div>
+    <div class="status-row">
+      <div class="dot" id="d-wh"></div>
+      <span class="status-label">Discord 通知</span>
+      <span class="status-val" id="v-wh">--</span>
+    </div>
+    <div class="status-row">
+      <div class="dot" id="d-hx"></div>
+      <span class="status-label">HX711 感測器</span>
+      <span class="status-val" id="v-hx">--</span>
+    </div>
+    <div class="status-row">
+      <div class="dot" id="d-ol"></div>
+      <span class="status-label">OLED 顯示屏</span>
+      <span class="status-val" id="v-ol">--</span>
+    </div>
+  </div>
+</div>
+
+<nav>
+  <a href="/" class="active"><span class="ni">🏠</span>首頁</a>
+  <a href="/history"><span class="ni">📊</span>歷史</a>
+  <a href="/settings"><span class="ni">⚙️</span>設定</a>
+</nav>
+
+<script>
+const STATE_NAMES = {
+  no_cup:          '無杯子',
+  unstable:        '不穩定',
+  stable:          '穩定',
+  possible_drink:  '正在喝',
+  drink_confirmed: '喝水完成',
+  refill_detected: '補水中'
+};
+
+function setDot(id, cls) { document.getElementById(id).className = 'dot ' + (cls || ''); }
+function setVal(id, t)   { document.getElementById(id).textContent = t; }
+
+function update(d) {
+  setVal('wt', d.weight_g != null ? Math.round(d.weight_g) + ' g' : '-- g');
+  setVal('st', STATE_NAMES[d.cup_state_name] || d.cup_state_name || '--');
+
+  const t = d.today_total_ml || 0, g = d.daily_goal_ml || 2000;
+  const p = g > 0 ? Math.min(100, Math.round(t * 100 / g)) : 0;
+  setVal('today', Math.round(t));
+  const bar = document.getElementById('bar');
+  bar.style.width = p + '%';
+  bar.className = 'progress-fill' + (p >= 100 ? ' done' : '');
+  setVal('pct', p + '% / 目標 ' + g + ' ml（' + (d.drink_count_today || 0) + ' 次）');
+
+  setVal('last', d.last_drink_ml > 0 ? Math.round(d.last_drink_ml) + ' ml' : '--');
+  const s = d.next_reminder_sec || 0;
+  setVal('next', s > 0 ? (s >= 60 ? Math.floor(s / 60) + ' 分鐘後' : s + ' 秒後') : '現在提醒！');
+
+  setDot('d-ntp', d.ntp_synced ? 'ok' : 'warn');
+  setVal('v-ntp', d.ntp_synced ? '已同步' : '未同步');
+
+  if (!d.webhook_configured) {
+    setDot('d-wh', ''); setVal('v-wh', '未設定');
+  } else if (d.webhook_last_ok) {
+    setDot('d-wh', 'ok');  setVal('v-wh', '發送成功');
+  } else {
+    setDot('d-wh', 'warn'); setVal('v-wh', '發送失敗');
+  }
+
+  setDot('d-hx', d.hw_hx711 ? 'ok' : 'err');
+  setVal('v-hx', d.hw_hx711 ? '正常' : '異常');
+  setDot('d-ol', d.hw_oled ? 'ok' : 'warn');
+  setVal('v-ol', d.hw_oled ? '正常' : '異常');
+}
+
+function poll() {
+  fetch('/api/status').then(r => r.json()).then(update).catch(() => {});
+}
+poll();
+setInterval(poll, 2000);
+</script>
+</body>
+</html>

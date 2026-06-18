@@ -13,7 +13,8 @@ class DashboardServer {
 public:
     void begin(ScaleManager& scale, ConfigManager& cfgMgr,
                AppState& state, AppConfig& cfg,
-               BuzzerController& buzzer, ReminderManager& reminder);
+               BuzzerController& buzzer, ReminderManager& reminder,
+               fs::LittleFSFS& logFs);
     void loop();
 
 private:
@@ -24,11 +25,17 @@ private:
     AppConfig*        _cfg      = nullptr;
     BuzzerController* _buzzer   = nullptr;
     ReminderManager*  _reminder = nullptr;
+    fs::LittleFSFS*   _logFs    = nullptr;
+
+    // Shared LittleFS file server
+    void _serveFile(const char* path, const char* contentType);
 
     // Page handlers
     void _handleRoot();
     void _handleSettings();
-    void _handleCalibrationPage();
+    void _handleHistory();
+    void _handleStyleCss();
+    void _handleCalibrationRedirect();
 
     // API handlers
     void _handleWeight();
@@ -39,6 +46,7 @@ private:
     void _handleCalibrate();
     void _handleWifiScan();
     void _handleReboot();
+    void _handleLogs();
 
     static const char* _cupStateStr(CupState s);
     static String _maskWebhookUrl(const String& url);
