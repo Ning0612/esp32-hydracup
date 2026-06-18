@@ -12,7 +12,7 @@ void DailySummaryManager::init(DiscordNotifier& discord, DrinkDetector& detector
     _cfg      = &cfg;
 
     Preferences prefs;
-    prefs.begin("daily_sum", true);
+    prefs.begin("daily_sum", false);
     _lastSettledKey = prefs.getString("settled", "");
     prefs.end();
 }

@@ -123,6 +123,7 @@ function load(){
     document.getElementById('bv').value=d.buzzerVolumePercent||50;
     document.getElementById('bd').value=d.buzzerDurationMs||150;
     document.getElementById('ws').value=d.wifiSsid||'';
+    document.getElementById('wh').value=d.discordWebhookUrl||'';
     document.getElementById('ne').checked=!!d.ntpEnabled;
     document.getElementById('n1').value=d.ntpServer1||'pool.ntp.org';
     document.getElementById('n2').value=d.ntpServer2||'time.google.com';
