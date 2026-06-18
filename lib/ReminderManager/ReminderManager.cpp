@@ -12,13 +12,20 @@ void ReminderManager::update() {
 
     if (_alerting) {
         const bool cupLifted = _appState && (_appState->cupState == CupState::NO_CUP);
-        const bool timedOut  = (millis() - _alertStartMs >= ALERT_TIMEOUT_MS);
+        const bool timedOut  = (millis() - _alertStartMs >= _alertTimeoutMs);
 
         if (cupLifted || timedOut) {
             _alerting    = false;
             _lastEventMs = millis();
             if (_buzzer) _buzzer->stop();
-            Serial.printf("[Reminder] Alert stopped (%s)\n", cupLifted ? "cup lifted" : "timeout");
+            Serial.printf("[Reminder] Alert stopped (%s)\n",
+                          cupLifted ? "cup lifted" : "timeout");
+            return;
+        }
+
+        // Keep looping the beep pattern until alert ends
+        if (_buzzer && !_buzzer->isPlaying()) {
+            _buzzer->play(BeepPattern::REMINDER);
         }
         return;
     }
@@ -48,6 +55,7 @@ void ReminderManager::update() {
 }
 
 void ReminderManager::resetTimer() {
+    if (_alerting && _buzzer) _buzzer->stop();
     _lastEventMs      = millis();
     _alerting         = false;
     _overdueWhileAway = false;

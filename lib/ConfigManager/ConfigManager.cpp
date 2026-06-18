@@ -9,9 +9,10 @@ void ConfigManager::load(AppConfig& cfg) {
     cfg.wifiPassword         = _prefs.getString("wifi_pass",     "");
     cfg.discordWebhookUrl    = _prefs.getString("webhook_url",   "");
 
-    cfg.reminderEnabled      = _prefs.getBool  ("rem_en",        cfg.reminderEnabled);
-    cfg.reminderIntervalMin  = _prefs.getUInt  ("rem_interval",  cfg.reminderIntervalMin);
-    cfg.dailyGoalMl          = _prefs.getUInt  ("daily_goal",    cfg.dailyGoalMl);
+    cfg.reminderEnabled          = _prefs.getBool("rem_en",        cfg.reminderEnabled);
+    cfg.reminderIntervalMin      = _prefs.getUInt("rem_interval",  cfg.reminderIntervalMin);
+    cfg.reminderAlertTimeoutSec  = _prefs.getUInt("rem_alert_to",  cfg.reminderAlertTimeoutSec);
+    cfg.dailyGoalMl              = _prefs.getUInt("daily_goal",    cfg.dailyGoalMl);
 
     cfg.buzzerEnabled        = _prefs.getBool  ("buz_en",        cfg.buzzerEnabled);
     cfg.buzzerFrequencyHz    = _prefs.getUInt  ("buz_freq",      cfg.buzzerFrequencyHz);
@@ -47,9 +48,10 @@ void ConfigManager::save(const AppConfig& cfg) {
     _prefs.putString("wifi_pass",    cfg.wifiPassword);
     _prefs.putString("webhook_url",  cfg.discordWebhookUrl);
 
-    _prefs.putBool  ("rem_en",       cfg.reminderEnabled);
-    _prefs.putUInt  ("rem_interval", cfg.reminderIntervalMin);
-    _prefs.putUInt  ("daily_goal",   cfg.dailyGoalMl);
+    _prefs.putBool("rem_en",       cfg.reminderEnabled);
+    _prefs.putUInt("rem_interval", cfg.reminderIntervalMin);
+    _prefs.putUInt("rem_alert_to", cfg.reminderAlertTimeoutSec);
+    _prefs.putUInt("daily_goal",   cfg.dailyGoalMl);
 
     _prefs.putBool  ("buz_en",       cfg.buzzerEnabled);
     _prefs.putUInt  ("buz_freq",     cfg.buzzerFrequencyHz);
@@ -99,9 +101,10 @@ void ConfigManager::clear() {
 }
 
 void ConfigManager::_applyDefaults(AppConfig& cfg) {
-    cfg.reminderEnabled      = true;
-    cfg.reminderIntervalMin  = DEFAULT_REMINDER_INTERVAL_MIN;
-    cfg.dailyGoalMl          = DEFAULT_DAILY_GOAL_ML;
+    cfg.reminderEnabled         = true;
+    cfg.reminderIntervalMin     = DEFAULT_REMINDER_INTERVAL_MIN;
+    cfg.reminderAlertTimeoutSec = DEFAULT_REMINDER_ALERT_TIMEOUT_SEC;
+    cfg.dailyGoalMl             = DEFAULT_DAILY_GOAL_ML;
     cfg.buzzerEnabled        = true;
     cfg.buzzerFrequencyHz    = BUZZER_DEFAULT_FREQ_HZ;
     cfg.buzzerDurationMs     = BUZZER_DEFAULT_DURATION_MS;

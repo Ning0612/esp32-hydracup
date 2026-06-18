@@ -22,19 +22,21 @@ public:
         const uint64_t ms = (uint64_t)min * 60000ULL;
         _intervalMs = (ms > 0xFFFFFFFFULL) ? 0xFFFFFFFFU : (uint32_t)ms;
     }
+    void setAlertTimeoutSec(uint32_t sec) {
+        _alertTimeoutMs = (uint32_t)min((uint64_t)sec * 1000ULL, (uint64_t)0xFFFFFFFFU);
+    }
 
     uint32_t getNextReminderSec() const;
 
 private:
-    static constexpr uint32_t ALERT_TIMEOUT_MS = 30000;
-
-    BuzzerController* _buzzer       = nullptr;
-    AppState*         _appState     = nullptr;
-    uint32_t          _intervalMs   = 60UL * 60000UL;
-    bool              _enabled      = true;
-    uint32_t          _lastEventMs  = 0;
-    bool              _alerting         = false;
-    uint32_t          _alertStartMs     = 0;
+    BuzzerController* _buzzer          = nullptr;
+    AppState*         _appState        = nullptr;
+    uint32_t          _intervalMs      = 60UL * 60000UL;
+    uint32_t          _alertTimeoutMs  = 60000UL;
+    bool              _enabled         = true;
+    uint32_t          _lastEventMs     = 0;
+    bool              _alerting        = false;
+    uint32_t          _alertStartMs    = 0;
     bool              _overdueWhileAway = false;
 
     bool _cupIsStable() const;

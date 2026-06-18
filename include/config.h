@@ -38,8 +38,9 @@
 #define DEFAULT_MAX_DRINK_ML       500.0f
 
 // Reminder defaults
-#define DEFAULT_REMINDER_INTERVAL_MIN  60
-#define DEFAULT_DAILY_GOAL_ML        2000
+#define DEFAULT_REMINDER_INTERVAL_MIN    60
+#define DEFAULT_REMINDER_ALERT_TIMEOUT_SEC 60
+#define DEFAULT_DAILY_GOAL_ML          2000
 
 // NTP defaults
 #define DEFAULT_NTP_SERVER1    "pool.ntp.org"

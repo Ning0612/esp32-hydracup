@@ -83,6 +83,7 @@ nav a{margin-right:12px;color:#1a73e8;text-decoration:none;font-size:.95em}
 
 <h3>提醒</h3>
 <label>間隔（分鐘）</label><input id="ri" type="number" min="1" max="1440">
+<label>提醒警報持續時間（秒，拿起杯子可提前停止）</label><input id="rat" type="number" min="5" max="3600">
 <div class="chk"><input id="re" type="checkbox"><label style="margin:0">啟用提醒</label></div>
 
 <h3>蜂鳴器</h3>
@@ -115,6 +116,7 @@ function load(){
   fetch('/api/config').then(r=>r.json()).then(d=>{
     document.getElementById('dg').value=d.dailyGoalMl||2000;
     document.getElementById('ri').value=d.reminderIntervalMin||60;
+    document.getElementById('rat').value=d.reminderAlertTimeoutSec||60;
     document.getElementById('re').checked=!!d.reminderEnabled;
     document.getElementById('be').checked=!!d.buzzerEnabled;
     document.getElementById('bf').value=d.buzzerFrequencyHz||2000;
@@ -133,6 +135,7 @@ function save(){
   var d={
     dailyGoalMl:parseInt(document.getElementById('dg').value)||2000,
     reminderIntervalMin:parseInt(document.getElementById('ri').value)||60,
+    reminderAlertTimeoutSec:parseInt(document.getElementById('rat').value)||60,
     reminderEnabled:document.getElementById('re').checked,
     buzzerEnabled:document.getElementById('be').checked,
     buzzerFrequencyHz:parseInt(document.getElementById('bf').value)||2000,
@@ -281,9 +284,10 @@ void DashboardServer::_handleGetConfig() {
     doc["wifiPassword"]        = "****";
     doc["wifiPasswordSet"]     = !_cfg->wifiPassword.isEmpty();
     doc["discordWebhookUrl"]   = _maskWebhookUrl(_cfg->discordWebhookUrl);
-    doc["reminderEnabled"]     = _cfg->reminderEnabled;
-    doc["reminderIntervalMin"] = _cfg->reminderIntervalMin;
-    doc["dailyGoalMl"]         = _cfg->dailyGoalMl;
+    doc["reminderEnabled"]          = _cfg->reminderEnabled;
+    doc["reminderIntervalMin"]      = _cfg->reminderIntervalMin;
+    doc["reminderAlertTimeoutSec"]  = _cfg->reminderAlertTimeoutSec;
+    doc["dailyGoalMl"]              = _cfg->dailyGoalMl;
     doc["buzzerEnabled"]       = _cfg->buzzerEnabled;
     doc["buzzerFrequencyHz"]   = _cfg->buzzerFrequencyHz;
     doc["buzzerDurationMs"]    = _cfg->buzzerDurationMs;
@@ -324,6 +328,11 @@ void DashboardServer::_handlePostConfig() {
         const uint32_t v = (uint32_t)constrain((long)doc["reminderIntervalMin"], 1L, 1440L);
         _cfg->reminderIntervalMin = v;
         _reminder->setIntervalMin(_cfg->reminderIntervalMin);
+    }
+    if (!doc["reminderAlertTimeoutSec"].isNull()) {
+        const uint32_t v = (uint32_t)constrain((long)doc["reminderAlertTimeoutSec"], 5L, 3600L);
+        _cfg->reminderAlertTimeoutSec = v;
+        _reminder->setAlertTimeoutSec(_cfg->reminderAlertTimeoutSec);
     }
 
     // Buzzer — apply immediately with range validation

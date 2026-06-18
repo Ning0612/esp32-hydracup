@@ -102,6 +102,7 @@ void setup() {
     buzzerController.setEnabled(appConfig.buzzerEnabled);
 
     reminderManager.init(appConfig.reminderIntervalMin, appConfig.reminderEnabled);
+    reminderManager.setAlertTimeoutSec(appConfig.reminderAlertTimeoutSec);
     reminderManager.setBuzzer(&buzzerController);
     reminderManager.setAppState(&appState);
     drinkDetector.init(scaleManager, appState, appConfig, reminderManager, buzzerController);

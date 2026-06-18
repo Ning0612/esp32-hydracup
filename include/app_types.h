@@ -23,9 +23,10 @@ struct AppConfig {
 
     String   discordWebhookUrl;
 
-    bool     reminderEnabled     = true;
-    uint32_t reminderIntervalMin = 60;
-    uint32_t dailyGoalMl        = 2000;
+    bool     reminderEnabled          = true;
+    uint32_t reminderIntervalMin      = 60;
+    uint32_t reminderAlertTimeoutSec  = 60;
+    uint32_t dailyGoalMl              = 2000;
 
     bool     buzzerEnabled       = true;
     uint32_t buzzerFrequencyHz   = 2000;
