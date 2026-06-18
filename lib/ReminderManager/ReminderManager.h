@@ -14,6 +14,7 @@ public:
         _enabled = en;
         if (!en) {
             _alerting         = false;
+            _beepCycleEndMs   = 0;
             _overdueWhileAway = false;
             if (_buzzer) _buzzer->stop();
         }
@@ -28,6 +29,8 @@ public:
 
     uint32_t getNextReminderSec() const;
 
+    static constexpr uint32_t BEEP_CYCLE_GAP_MS = 800;
+
 private:
     BuzzerController* _buzzer          = nullptr;
     AppState*         _appState        = nullptr;
@@ -37,6 +40,7 @@ private:
     uint32_t          _lastEventMs     = 0;
     bool              _alerting        = false;
     uint32_t          _alertStartMs    = 0;
+    uint32_t          _beepCycleEndMs  = 0;
     bool              _overdueWhileAway = false;
 
     bool _cupIsStable() const;
