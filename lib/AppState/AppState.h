@@ -1,4 +1,5 @@
 #pragma once
+#include <atomic>
 #include "app_types.h"
 
 struct AppState {
@@ -19,8 +20,8 @@ struct AppState {
     uint32_t drinkCountToday = 0;
     uint32_t nextReminderSec = 0;
 
-    bool     webhookConfigured = false;
-    bool     webhookLastOk     = false;
+    bool               webhookConfigured = false;
+    std::atomic<bool>  webhookLastOk{false};
 
     String   ipAddress;
 };

@@ -7,7 +7,7 @@ void DiscordNotifier::init(AppState& state, const AppConfig& cfg) {
     _state = &state;
     _cfg   = &cfg;
     _state->webhookConfigured = !_cfg->discordWebhookUrl.isEmpty();
-    _state->webhookLastOk     = false;
+    _state->webhookLastOk.store(false, std::memory_order_relaxed);
     Serial.printf("[Discord] init  configured=%s\n",
                   _state->webhookConfigured ? "yes" : "no");
 }
@@ -260,24 +260,50 @@ void DiscordNotifier::update() {
 void DiscordNotifier::_sendTask(void* param) {
     TaskParam* p = static_cast<TaskParam*>(param);
 
-    {   // Scope ensures WiFiClientSecure/HTTPClient destructors run before vTaskDelete
-        WiFiClientSecure client;
-        client.setInsecure();
-        HTTPClient http;
-        http.setTimeout(10000);
+    // 3 total attempts; delays (ms) before attempt 1 and 2
+    static constexpr int      MAX_ATTEMPTS = 3;
+    static constexpr uint32_t RETRY_MS[]   = {2000, 8000};
 
-        if (http.begin(client, p->webhookUrl)) {
-            http.addHeader("Content-Type", "application/json");
-            const int code = http.POST(String(p->body));
-            *p->lastOkPtr = (code >= 200 && code < 300);
-            Serial.printf("[Discord] POST %s  HTTP %d\n",
-                          *p->lastOkPtr ? "OK" : "FAILED", code);
-            http.end();
-        } else {
-            *p->lastOkPtr = false;
-            Serial.println("[Discord] http.begin() failed");
+    bool ok = false;
+    for (int attempt = 0; attempt < MAX_ATTEMPTS; ++attempt) {
+        if (attempt > 0) {
+            vTaskDelay(pdMS_TO_TICKS(RETRY_MS[attempt - 1]));
+            Serial.printf("[Discord] Retry %d/%d\n", attempt, MAX_ATTEMPTS - 1);
         }
+
+        bool retryable = false;
+        {   // Scope ensures destructors run before next iteration / vTaskDelete
+            WiFiClientSecure client;
+            client.setInsecure();
+            HTTPClient http;
+            http.setTimeout(10000);
+
+            if (!http.begin(client, p->webhookUrl)) {
+                Serial.println("[Discord] http.begin() failed");
+                retryable = true;
+            } else {
+                http.addHeader("Content-Type", "application/json");
+                const int code = http.POST(String(p->body));
+                http.end();
+
+                if (code >= 200 && code < 300) {
+                    ok = true;
+                } else if (code == 408 || code == 429 || code >= 500 || code < 0) {
+                    // Transient: request timeout, rate-limited, server error, or network failure
+                    Serial.printf("[Discord] POST HTTP %d (retryable)\n", code);
+                    retryable = true;
+                } else {
+                    // Permanent: bad request, wrong URL, auth error, etc.
+                    Serial.printf("[Discord] POST HTTP %d (permanent failure)\n", code);
+                }
+            }
+        }
+
+        if (ok || !retryable) break;
     }
+
+    p->lastOkPtr->store(ok, std::memory_order_release);
+    Serial.printf("[Discord] POST %s\n", ok ? "OK" : "FAILED (all attempts exhausted)");
 
     p->taskRunningPtr->store(false, std::memory_order_release);
     delete p;

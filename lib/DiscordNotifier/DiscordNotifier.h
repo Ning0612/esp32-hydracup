@@ -16,7 +16,7 @@ private:
     struct TaskParam {
         char                webhookUrl[512];
         char                body[768];
-        bool*               lastOkPtr;
+        std::atomic<bool>*  lastOkPtr;
         std::atomic<bool>*  taskRunningPtr;
     };
 
