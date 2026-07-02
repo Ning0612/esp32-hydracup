@@ -120,6 +120,8 @@ void DashboardServer::_handleStatus() {
     doc["next_reminder_sec"] = _state->nextReminderSec;
     doc["webhook_configured"] = _state->webhookConfigured;
     doc["webhook_last_ok"]   = _state->webhookLastOk.load();
+    doc["mqtt_configured"]   = _state->mqttConfigured;
+    doc["mqtt_connected"]    = _state->mqttConnected.load();
     doc["hw_hx711"]          = _state->hx711Ok;
     doc["hw_oled"]           = _state->oledOk;
     doc["hw_fs"]             = _state->fsOk;
@@ -147,6 +149,14 @@ void DashboardServer::_handleGetConfig() {
     doc["ntpServer1"]              = _cfg->ntpServer1;
     doc["ntpServer2"]              = _cfg->ntpServer2;
     doc["timezoneOffsetSec"]       = _cfg->timezoneOffsetSec;
+    doc["mqttEnabled"]             = _cfg->mqttEnabled;
+    doc["mqttBrokerHost"]          = _cfg->mqttBrokerHost;
+    doc["mqttBrokerPort"]          = _cfg->mqttBrokerPort;
+    doc["mqttUsername"]            = _cfg->mqttUsername;
+    doc["mqttPassword"]            = "****";
+    doc["mqttPasswordSet"]         = !_cfg->mqttPassword.isEmpty();
+    doc["mqttClientId"]            = _cfg->mqttClientId;
+    doc["mqttHeartbeatSec"]        = _cfg->mqttHeartbeatSec;
     doc["calibrationFactor"]       = _scale->getCalibrationFactor();
     doc["cupPresentThresholdGram"] = _cfg->cupPresentThresholdGram;
     doc["stableToleranceGram"]     = _cfg->stableToleranceGram;
@@ -270,11 +280,34 @@ void DashboardServer::_handlePostConfig() {
             rebootRequired = true;
         }
     };
+    auto applyUint16 = [&](const char* key, uint16_t& target, long lo, long hi) {
+        JsonVariant v = doc[key];
+        if (!v.isNull() && (v.is<int>() || v.is<float>())) {
+            target = (uint16_t)constrain((long)v.as<float>(), lo, hi);
+            rebootRequired = true;
+        }
+    };
     applyFloat("cupPresentThresholdGram", _cfg->cupPresentThresholdGram, 10.0f,  500.0f);
     applyFloat("stableToleranceGram",     _cfg->stableToleranceGram,      0.5f,   20.0f);
     applyUlong("stableDurationMs",        _cfg->stableDurationMs,          500L, 10000L);
     applyFloat("minDrinkDeltaMl",         _cfg->minDrinkDeltaMl,           5.0f,  100.0f);
     applyFloat("maxDrinkDeltaMl",         _cfg->maxDrinkDeltaMl,          50.0f, 1000.0f);
+
+    // MQTT — needs reboot
+    if (!doc["mqttEnabled"].isNull())    { _cfg->mqttEnabled    = (bool)doc["mqttEnabled"]; rebootRequired = true; }
+    if (!doc["mqttBrokerHost"].isNull()) { _cfg->mqttBrokerHost = doc["mqttBrokerHost"].as<String>(); rebootRequired = true; }
+    if (!doc["mqttUsername"].isNull())   { _cfg->mqttUsername   = doc["mqttUsername"].as<String>();   rebootRequired = true; }
+    if (!doc["mqttClientId"].isNull()) {
+        const String cid = doc["mqttClientId"].as<String>();
+        _cfg->mqttClientId = cid.isEmpty() ? String(DEFAULT_MQTT_CLIENT_ID) : cid;
+        rebootRequired = true;
+    }
+    if (!doc["mqttPassword"].isNull()) {
+        const String p = doc["mqttPassword"].as<String>();
+        if (!p.isEmpty() && p != "****") { _cfg->mqttPassword = p; rebootRequired = true; }
+    }
+    applyUint16("mqttBrokerPort",   _cfg->mqttBrokerPort,   1L, 65535L);
+    applyUint16("mqttHeartbeatSec", _cfg->mqttHeartbeatSec, 5L, 3600L);
 
     _cfgMgr->save(*_cfg);
 

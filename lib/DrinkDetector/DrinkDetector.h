@@ -10,6 +10,7 @@
 class DiscordNotifier;
 class EventLogger;
 class TimeManager;
+class MqttPublisher;
 
 class DrinkDetector {
 public:
@@ -20,6 +21,7 @@ public:
     void setDiscordNotifier(DiscordNotifier* dn) { _discord  = dn; }
     void setEventLogger(EventLogger* el)         { _eventLog = el; }
     void setTimeManager(TimeManager* tm)         { _time     = tm; }
+    void setMqttPublisher(MqttPublisher* mp)     { _mqtt     = mp; }
 
     CupState getCupState()        const { return _state->cupState; }
     float    getTodayTotalMl()    const { return _todayTotalMl; }
@@ -36,6 +38,7 @@ private:
     DiscordNotifier*  _discord    = nullptr;
     EventLogger*      _eventLog   = nullptr;
     TimeManager*      _time       = nullptr;
+    MqttPublisher*    _mqtt       = nullptr;
 
     float    _prevStableWeight      = 0.0f;
     float    _todayTotalMl          = 0.0f;

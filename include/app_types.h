@@ -40,6 +40,14 @@ struct AppConfig {
     int      timezoneOffsetSec   = 8 * 3600;
     int      daylightOffsetSec   = 0;
 
+    bool     mqttEnabled         = false;
+    String   mqttBrokerHost;
+    uint16_t mqttBrokerPort      = DEFAULT_MQTT_BROKER_PORT;
+    String   mqttUsername;
+    String   mqttPassword;
+    String   mqttClientId        = DEFAULT_MQTT_CLIENT_ID;
+    uint16_t mqttHeartbeatSec    = DEFAULT_MQTT_HEARTBEAT_SEC;
+
     float    calibrationFactor        = 1.0f;
     long     tareOffset               = 0;
     float    cupPresentThresholdGram  = 80.0f;

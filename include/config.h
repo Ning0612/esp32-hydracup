@@ -48,3 +48,8 @@
 #define DEFAULT_TIMEZONE       "Asia/Taipei"
 #define DEFAULT_TZ_OFFSET_SEC  (8 * 3600)
 #define DEFAULT_DST_OFFSET_SEC 0
+
+// MQTT defaults
+#define DEFAULT_MQTT_BROKER_PORT    1883
+#define DEFAULT_MQTT_CLIENT_ID      "hydracup-device"
+#define DEFAULT_MQTT_HEARTBEAT_SEC  60

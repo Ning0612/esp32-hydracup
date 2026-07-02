@@ -2,6 +2,7 @@
 #include "DiscordNotifier.h"
 #include "EventLogger.h"
 #include "TimeManager.h"
+#include "MqttPublisher.h"
 
 static constexpr uint32_t DRINK_LIFT_TIMEOUT_MS = 120000;
 
@@ -133,6 +134,7 @@ void DrinkDetector::_onDrinkConfirmed(float amountMl) {
     const String ts = _time ? _time->getISOTimestamp() : String("");
     if (_discord)  _discord->notifyDrink(amountMl, _todayTotalMl, _drinkCount);
     if (_eventLog) _eventLog->logDrink(ts, amountMl, _todayTotalMl, _time);
+    if (_mqtt)     _mqtt->publishStatus(_todayTotalMl, "drink");
     _nvsSave();
 }
 
@@ -183,6 +185,7 @@ void DrinkDetector::_nvsSave() {
 void DrinkDetector::_onRefillDetected(float amountMl) {
     Serial.printf("[REFILL] +%.0f ml\n", amountMl);
     _transitionTo(CupState::REFILL_DETECTED);
+    if (_mqtt) _mqtt->publishStatus(_todayTotalMl, "refill");
 }
 
 const char* DrinkDetector::_cupStateName(CupState s) {

@@ -15,6 +15,7 @@ static fs::LittleFSFS LogFS;
 #include "DiscordNotifier.h"
 #include "DrinkDetector.h"
 #include "EventLogger.h"
+#include "MqttPublisher.h"
 #include "ReminderManager.h"
 #include "ScaleManager.h"
 #include "TimeManager.h"
@@ -40,6 +41,7 @@ static TimeManager      timeManager;
 static DiscordNotifier     discordNotifier;
 static EventLogger         eventLogger;
 static DailySummaryManager dailySummaryManager;
+static MqttPublisher       mqttPublisher;
 
 static void initFilesystem() {
     if (LittleFS.begin(false, "/webfs", 5, "webfs")) {
@@ -124,10 +126,13 @@ void setup() {
         if (appConfig.ntpEnabled) timeManager.init(appConfig);
         discordNotifier.init(appState, appConfig);
         discordNotifier.notifyOnline(appState.ipAddress);
+        if (appConfig.mqttEnabled) mqttPublisher.init(appState, appConfig);
         eventLogger.init(appState.logFsOk, LogFS);
         drinkDetector.setTimeManager(&timeManager);
         drinkDetector.setDiscordNotifier(&discordNotifier);
         drinkDetector.setEventLogger(&eventLogger);
+        drinkDetector.setMqttPublisher(&mqttPublisher);
+        mqttPublisher.setTimeManager(&timeManager);
         dailySummaryManager.init(discordNotifier, drinkDetector, timeManager, appConfig);
         Serial.printf("[INFO] Normal Mode  IP: %s\n", appState.ipAddress.c_str());
         displayManager.sleep();
@@ -189,6 +194,7 @@ void loop() {
         timeManager.update();
         appState.ntpSynced = timeManager.isSynced();
         discordNotifier.update();
+        mqttPublisher.loop();
         dailySummaryManager.update();
 
         displayManager.showNormalMode(

@@ -23,5 +23,8 @@ struct AppState {
     bool               webhookConfigured = false;
     std::atomic<bool>  webhookLastOk{false};
 
+    bool               mqttConfigured = false;
+    std::atomic<bool>  mqttConnected{false};
+
     String   ipAddress;
 };

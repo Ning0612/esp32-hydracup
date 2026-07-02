@@ -53,6 +53,11 @@
       <span class="status-val" id="v-wh">--</span>
     </div>
     <div class="status-row">
+      <div class="dot" id="d-mq"></div>
+      <span class="status-label">MQTT 連線</span>
+      <span class="status-val" id="v-mq">--</span>
+    </div>
+    <div class="status-row">
       <div class="dot" id="d-hx"></div>
       <span class="status-label">HX711 感測器</span>
       <span class="status-val" id="v-hx">--</span>
@@ -109,6 +114,14 @@ function update(d) {
     setDot('d-wh', 'ok');  setVal('v-wh', '發送成功');
   } else {
     setDot('d-wh', 'warn'); setVal('v-wh', '發送失敗');
+  }
+
+  if (!d.mqtt_configured) {
+    setDot('d-mq', ''); setVal('v-mq', '未設定');
+  } else if (d.mqtt_connected) {
+    setDot('d-mq', 'ok');  setVal('v-mq', '已連線');
+  } else {
+    setDot('d-mq', 'warn'); setVal('v-mq', '未連線');
   }
 
   setDot('d-hx', d.hw_hx711 ? 'ok' : 'err');

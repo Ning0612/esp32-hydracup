@@ -26,6 +26,14 @@ void ConfigManager::load(AppConfig& cfg) {
     cfg.timezoneOffsetSec    = _prefs.getInt   ("tz_off",        cfg.timezoneOffsetSec);
     cfg.daylightOffsetSec    = _prefs.getInt   ("dst_off",       cfg.daylightOffsetSec);
 
+    cfg.mqttEnabled          = _prefs.getBool  ("mqtt_en",       cfg.mqttEnabled);
+    cfg.mqttBrokerHost       = _prefs.getString("mqtt_host",     cfg.mqttBrokerHost);
+    cfg.mqttBrokerPort       = (uint16_t)_prefs.getUInt("mqtt_port", cfg.mqttBrokerPort);
+    cfg.mqttUsername         = _prefs.getString("mqtt_user",     cfg.mqttUsername);
+    cfg.mqttPassword         = _prefs.getString("mqtt_pass",     cfg.mqttPassword);
+    cfg.mqttClientId         = _prefs.getString("mqtt_cid",      cfg.mqttClientId);
+    cfg.mqttHeartbeatSec     = (uint16_t)_prefs.getUInt("mqtt_hb", cfg.mqttHeartbeatSec);
+
     cfg.calibrationFactor    = _prefs.getFloat ("cal_factor",    cfg.calibrationFactor);
     cfg.tareOffset           = _prefs.getLong  ("tare_offset",   cfg.tareOffset);
     cfg.cupPresentThresholdGram = _prefs.getFloat("cup_thresh",  cfg.cupPresentThresholdGram);
@@ -64,6 +72,14 @@ void ConfigManager::save(const AppConfig& cfg) {
     _prefs.putString("tz",           cfg.timezone);
     _prefs.putInt   ("tz_off",       cfg.timezoneOffsetSec);
     _prefs.putInt   ("dst_off",      cfg.daylightOffsetSec);
+
+    _prefs.putBool  ("mqtt_en",      cfg.mqttEnabled);
+    _prefs.putString("mqtt_host",    cfg.mqttBrokerHost);
+    _prefs.putUInt  ("mqtt_port",    cfg.mqttBrokerPort);
+    _prefs.putString("mqtt_user",    cfg.mqttUsername);
+    _prefs.putString("mqtt_pass",    cfg.mqttPassword);
+    _prefs.putString("mqtt_cid",     cfg.mqttClientId);
+    _prefs.putUInt  ("mqtt_hb",      cfg.mqttHeartbeatSec);
 
     _prefs.putFloat ("cal_factor",   cfg.calibrationFactor);
     _prefs.putLong  ("tare_offset",  cfg.tareOffset);
@@ -115,6 +131,13 @@ void ConfigManager::_applyDefaults(AppConfig& cfg) {
     cfg.timezone             = DEFAULT_TIMEZONE;
     cfg.timezoneOffsetSec    = DEFAULT_TZ_OFFSET_SEC;
     cfg.daylightOffsetSec    = DEFAULT_DST_OFFSET_SEC;
+    cfg.mqttEnabled          = false;
+    cfg.mqttBrokerHost       = "";
+    cfg.mqttBrokerPort       = DEFAULT_MQTT_BROKER_PORT;
+    cfg.mqttUsername         = "";
+    cfg.mqttPassword         = "";
+    cfg.mqttClientId         = DEFAULT_MQTT_CLIENT_ID;
+    cfg.mqttHeartbeatSec     = DEFAULT_MQTT_HEARTBEAT_SEC;
     cfg.calibrationFactor    = 1.0f;
     cfg.tareOffset           = 0;
     cfg.cupPresentThresholdGram = DEFAULT_CUP_THRESHOLD_G;

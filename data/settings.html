@@ -146,6 +146,36 @@
     </select>
   </div>
 
+  <!-- MQTT -->
+  <div class="section-title">MQTT（選填，變更後需重新啟動）</div>
+  <div class="checkbox-row">
+    <input type="checkbox" id="me"><label for="me">啟用 MQTT 發佈</label>
+  </div>
+  <div class="form-group">
+    <label>Broker 位址</label>
+    <input type="text" id="mh" placeholder="192.168.1.50 或 epaper-display.local">
+  </div>
+  <div class="form-group">
+    <label>Port</label>
+    <input type="number" id="mp" min="1" max="65535">
+  </div>
+  <div class="form-group">
+    <label>帳號</label>
+    <input type="text" id="mu">
+  </div>
+  <div class="form-group">
+    <label>密碼（留空 = 不修改）</label>
+    <input type="password" id="mpw" placeholder="留空 = 不修改">
+  </div>
+  <div class="form-group">
+    <label>Client ID</label>
+    <input type="text" id="mc" placeholder="hydracup-device">
+  </div>
+  <div class="form-group">
+    <label>心跳間隔（秒）</label>
+    <input type="number" id="mhb" min="5" max="3600">
+  </div>
+
   <button class="btn btn-primary" onclick="save()">儲存設定</button>
   <button class="btn btn-danger" onclick="reboot()">重新啟動裝置</button>
   <div class="msg" id="msg"></div>
@@ -227,6 +257,12 @@ function load() {
     document.getElementById('sdm').value  = d.stableDurationMs || 3000;
     document.getElementById('mnd').value  = d.minDrinkDeltaMl != null ? d.minDrinkDeltaMl : 20;
     document.getElementById('mxd').value  = d.maxDrinkDeltaMl != null ? d.maxDrinkDeltaMl : 500;
+    document.getElementById('me').checked = !!d.mqttEnabled;
+    document.getElementById('mh').value   = d.mqttBrokerHost || '';
+    document.getElementById('mp').value   = d.mqttBrokerPort || 1883;
+    document.getElementById('mu').value   = d.mqttUsername || '';
+    document.getElementById('mc').value   = d.mqttClientId || 'hydracup-device';
+    document.getElementById('mhb').value  = d.mqttHeartbeatSec || 60;
     if (d.calibrationFactor != null)
       document.getElementById('cur-factor').textContent = (+d.calibrationFactor).toFixed(4);
   }).catch(() => showMsg('msg', '設定載入失敗，請重新整理', false));
@@ -235,6 +271,7 @@ function load() {
 function save() {
   const wp = document.getElementById('wp').value;
   const wh = document.getElementById('wh').value;
+  const mpw = document.getElementById('mpw').value;
   const body = {
     dailyGoalMl:             parseInt(document.getElementById('dg').value)    || 2000,
     reminderIntervalMin:     parseInt(document.getElementById('ri').value)    || 60,
@@ -253,10 +290,17 @@ function save() {
     stableToleranceGram:     parseFloat(document.getElementById('stg').value) || 3,
     stableDurationMs:        parseInt(document.getElementById('sdm').value)   || 3000,
     minDrinkDeltaMl:         parseFloat(document.getElementById('mnd').value) || 20,
-    maxDrinkDeltaMl:         parseFloat(document.getElementById('mxd').value) || 500
+    maxDrinkDeltaMl:         parseFloat(document.getElementById('mxd').value) || 500,
+    mqttEnabled:             document.getElementById('me').checked,
+    mqttBrokerHost:          document.getElementById('mh').value,
+    mqttBrokerPort:          parseInt(document.getElementById('mp').value)  || 1883,
+    mqttUsername:            document.getElementById('mu').value,
+    mqttClientId:            document.getElementById('mc').value || 'hydracup-device',
+    mqttHeartbeatSec:        parseInt(document.getElementById('mhb').value) || 60
   };
   if (wp) body.wifiPassword = wp;
   if (wh.indexOf('****') < 0) body.discordWebhookUrl = wh;
+  if (mpw) body.mqttPassword = mpw;
 
   fetch('/api/config', {
     method: 'POST',
