@@ -10,7 +10,7 @@
 [![ArduinoJson](https://img.shields.io/badge/JSON-ArduinoJson-yellow)](https://arduinojson.org)
 [![Adafruit SSD1306](https://img.shields.io/badge/OLED-Adafruit%20SSD1306-blueviolet)](https://github.com/adafruit/Adafruit_SSD1306)
 [![Discord](https://img.shields.io/badge/Notify-Discord%20Webhook-5865F2?logo=discord)](https://discord.com/developers/docs/resources/webhook)
-[![License](https://img.shields.io/badge/License-Unlicensed-lightgrey)](LICENSE)
+[![License](https://img.shields.io/badge/License-MIT-yellow)](LICENSE)
 
 ESP32-based smart water cup tracker. Measures cup weight via HX711, detects drink events, sends Discord Webhook notifications, and provides a local web dashboard.
 
@@ -129,3 +129,7 @@ Full API reference: [docs/api.md](docs/api.md)
 | [docs/guides/calibration.md](docs/guides/calibration.md) | Scale calibration |
 | [docs/guides/configuration.md](docs/guides/configuration.md) | All settings explained |
 | [docs/guides/discord-setup.md](docs/guides/discord-setup.md) | Discord Webhook setup |
+
+## License
+
+This public version is released under the MIT License. See [LICENSE](LICENSE).
