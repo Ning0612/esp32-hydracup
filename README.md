@@ -10,6 +10,7 @@
 [![ArduinoJson](https://img.shields.io/badge/JSON-ArduinoJson-yellow)](https://arduinojson.org)
 [![Adafruit SSD1306](https://img.shields.io/badge/OLED-Adafruit%20SSD1306-blueviolet)](https://github.com/adafruit/Adafruit_SSD1306)
 [![Discord](https://img.shields.io/badge/Notify-Discord%20Webhook-5865F2?logo=discord)](https://discord.com/developers/docs/resources/webhook)
+[![CI](https://github.com/Ning0612/esp32-hydracup/actions/workflows/ci.yml/badge.svg)](https://github.com/Ning0612/esp32-hydracup/actions/workflows/ci.yml)
 [![License](https://img.shields.io/badge/License-MIT-yellow)](LICENSE)
 
 ESP32-based smart water cup tracker. Measures cup weight via HX711, detects drink events, sends Discord Webhook notifications, and provides a local web dashboard.
