@@ -5,6 +5,17 @@
 > **Windows Bash 工具注意**：`pio` 未在 Bash PATH 中，請使用完整路徑：  
 > `~/.platformio/penv/Scripts/pio.exe`（PowerShell：`$env:USERPROFILE\.platformio\penv\Scripts\pio.exe`）
 
+## CI
+
+GitHub Actions 會在 push、pull request 與手動 workflow dispatch 時執行
+`.github/workflows/ci.yml`：
+
+- 安裝 PlatformIO
+- 執行 `pio run -e esp32dev`
+
+CI 只驗證韌體可建置，不會燒錄裝置、上傳 LittleFS、連接 HX711/OLED，
+也不會執行硬體或 Discord/MQTT 整合測試。
+
 ### 常用指令
 
 ```bash
