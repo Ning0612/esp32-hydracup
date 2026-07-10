@@ -29,6 +29,8 @@ Personal side project for daily hydration tracking. It may continue to receive m
   <img src="docs/demo/demo-preview.gif" alt="HydraCup drink detection preview" width="560">
 </p>
 
+The GIF above is a short preview; use the MP4 link below for the full demo.
+
 Full demo video:
 
 - [Drink detection demo (MP4)](docs/demo/drink-detection-demo.mp4)
