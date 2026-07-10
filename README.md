@@ -19,15 +19,25 @@ ESP32-based smart water cup tracker. Measures cup weight via HX711, detects drin
 
 Personal side project for daily hydration tracking. It may continue to receive maintenance when new feature ideas or practical usage needs come up.
 
-![HydraCup real hardware setup](docs/demo/real-setup.jpg)
+<p align="center">
+  <img src="docs/demo/real-setup.jpg" alt="HydraCup real hardware setup" width="720">
+</p>
 
 ## Demo
 
-![HydraCup drink detection preview](docs/demo/demo-preview.gif)
+<p align="center">
+  <img src="docs/demo/demo-preview.gif" alt="HydraCup drink detection preview" width="560">
+</p>
 
-| OLED status | Drink detection demo |
-|---|---|
-| ![HydraCup OLED daily progress display](docs/demo/oled-status.jpg) | [Watch MP4 demo](docs/demo/drink-detection-demo.mp4) |
+Full demo video:
+
+- [Drink detection demo (MP4)](docs/demo/drink-detection-demo.mp4)
+
+OLED status:
+
+<p align="center">
+  <img src="docs/demo/oled-status.jpg" alt="HydraCup OLED daily progress display" width="560">
+</p>
 
 ---
 
