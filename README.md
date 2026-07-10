@@ -23,6 +23,8 @@ Personal side project for daily hydration tracking. It may continue to receive m
 
 ## Demo
 
+![HydraCup drink detection preview](docs/demo/demo-preview.gif)
+
 | OLED status | Drink detection demo |
 |---|---|
 | ![HydraCup OLED daily progress display](docs/demo/oled-status.jpg) | [Watch MP4 demo](docs/demo/drink-detection-demo.mp4) |
