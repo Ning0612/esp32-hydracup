@@ -15,6 +15,14 @@
 
 ESP32-based smart water cup tracker. Measures cup weight via HX711, detects drink events, sends Discord Webhook notifications, and provides a local web dashboard.
 
+![HydraCup real hardware setup](docs/demo/real-setup.jpg)
+
+## Demo
+
+| OLED status | Drink detection demo |
+|---|---|
+| ![HydraCup OLED daily progress display](docs/demo/oled-status.jpg) | [Watch MP4 demo](docs/demo/drink-detection-demo.mp4) |
+
 ---
 
 ## Features
