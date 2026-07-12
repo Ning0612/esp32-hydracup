@@ -53,7 +53,8 @@ HydraCup 在 ESP32 上以 Arduino 框架運行，分為兩個互斥模式：
 | `ConfigPortal` | AP Mode HTTP 伺服器（192.168.4.1），WiFi 設定 |
 | `DashboardServer` | Normal Mode HTTP 伺服器，儀表板 + REST API |
 | `ScaleManager` | HX711 取樣、移動平均濾波、秤台校正 |
-| `DrinkDetector` | 6 態飲水偵測狀態機 + 每日計數器（NVS 持久化） |
+| `DrinkDetectorCore` | 不依賴 Arduino 的 6 態飲水偵測核心，輸出飲水/補水事件 |
+| `DrinkDetector` | ESP32 adapter：對接 ScaleManager、AppState、每日計數器與通知管道 |
 | `ReminderManager` | millis 計時提醒，飲水後重置 |
 | `BuzzerController` | LEDC PWM 非阻塞蜂鳴佇列（7 種模式） |
 | `DisplayManager` | SSD1306 OLED 輪播（2 頁，各 4 秒），自動睡眠 |
@@ -156,3 +157,14 @@ HydraCup 在 ESP32 上以 Arduino 框架運行，分為兩個互斥模式：
 | `maxDrinkDeltaMl` | 500.0 ml | 最大有效飲水量 |
 
 `1 g ≈ 1 ml` 在整個系統中成立。
+
+### 濾波與穩定判定依據
+
+`ScaleManager` 以 10 筆 moving average 平滑 HX711 讀值；取樣間隔為 100 ms，
+因此約涵蓋 1 秒的短期輸入。這個窗口用來壓低單次 ADC 抖動，同時保留拿起杯子
+與放回杯子的重量變化反應速度。
+
+穩定判定預設允許重量在 ±3 g 內波動，並要求持續 3000 ms。3 g 是用來容許 load
+cell 與平台的微幅噪聲；3 秒則避免短暫碰撞或放杯回彈直接進入 `CUP_STABLE`。
+這兩個值是初始調校值，應依實際秤台、load cell 與環境振動調整：放寬誤差或縮短
+時間會加快反應但提高誤判風險，收緊誤差或延長時間則相反。

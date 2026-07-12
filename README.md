@@ -3,13 +3,7 @@
 [![PlatformIO](https://img.shields.io/badge/PlatformIO-espressif32%406.10-orange?logo=platformio)](https://platformio.org)
 [![ESP32](https://img.shields.io/badge/Board-ESP32-red?logo=espressif)](https://www.espressif.com/en/products/socs/esp32)
 [![Arduino](https://img.shields.io/badge/Framework-Arduino-teal?logo=arduino)](https://www.arduino.cc)
-[![C++](https://img.shields.io/badge/Language-C%2B%2B-blue?logo=cplusplus)](https://isocpp.org)
 [![Version](https://img.shields.io/badge/Version-0.1.0-brightgreen)](include/version.h)
-[![LittleFS](https://img.shields.io/badge/Filesystem-LittleFS-lightgrey)](https://github.com/lorol/LITTLEFS)
-[![HX711](https://img.shields.io/badge/Sensor-HX711-green)](https://github.com/bogde/HX711)
-[![ArduinoJson](https://img.shields.io/badge/JSON-ArduinoJson-yellow)](https://arduinojson.org)
-[![Adafruit SSD1306](https://img.shields.io/badge/OLED-Adafruit%20SSD1306-blueviolet)](https://github.com/adafruit/Adafruit_SSD1306)
-[![Discord](https://img.shields.io/badge/Notify-Discord%20Webhook-5865F2?logo=discord)](https://discord.com/developers/docs/resources/webhook)
 [![CI](https://github.com/Ning0612/esp32-hydracup/actions/workflows/ci.yml/badge.svg)](https://github.com/Ning0612/esp32-hydracup/actions/workflows/ci.yml)
 [![License](https://img.shields.io/badge/License-MIT-yellow)](LICENSE)
 
@@ -149,7 +143,7 @@ Full API reference: [docs/api.md](docs/api.md)
 | [docs/hardware.md](docs/hardware.md) | GPIO wiring and bill of materials |
 | [docs/architecture.md](docs/architecture.md) | System architecture, boot flow, drink detection state machine |
 | [docs/api.md](docs/api.md) | Complete REST API reference |
-| [docs/modules.md](docs/modules.md) | All 14 module descriptions and public APIs |
+| [docs/modules.md](docs/modules.md) | Firmware module descriptions and public APIs |
 | [docs/data-formats.md](docs/data-formats.md) | JSONL log format and NVS storage schema |
 | [docs/guides/getting-started.md](docs/guides/getting-started.md) | First-time setup |
 | [docs/guides/build-flash.md](docs/guides/build-flash.md) | Build and flash commands |

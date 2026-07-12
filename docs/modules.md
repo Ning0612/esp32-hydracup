@@ -119,9 +119,18 @@ API 完整文件見 [api.md](api.md)。
 
 ---
 
+## DrinkDetectorCore
+
+**職責**：不依賴 Arduino 的 6 態飲水偵測核心。輸入重量、穩定狀態與時間，
+透過 `DrinkDetectorEventSink` 輸出飲水/補水事件；`DrinkDetectorEventHandler`
+則隔離計數器、持久化與通知效果，供 native 測試使用 fake ports。
+
+**位置**：`lib/DrinkDetectorCore/`
+
 ## DrinkDetector
 
-**職責**：6 態飲水偵測狀態機，僅透過「杯子拿起後放下」路徑觸發飲水或補水事件，並在 NVS 持久化每日計數器。
+**職責**：ESP32 adapter，將 `ScaleManager`、`AppState`、NVS、提醒、蜂鳴器與通知
+管道接到 `DrinkDetectorCore`；核心仍僅透過「杯子拿起後放下」路徑觸發飲水或補水事件。
 
 **位置**：`lib/DrinkDetector/`
 
@@ -132,6 +141,7 @@ API 完整文件見 [api.md](api.md)。
 | `setDiscordNotifier(DiscordNotifier* dn)` | 注入 DiscordNotifier 依賴 |
 | `setEventLogger(EventLogger* el)` | 注入 EventLogger 依賴 |
 | `setTimeManager(TimeManager* tm)` | 注入 TimeManager 依賴 |
+| `setCounterPersistence(DrinkCounterPersistence* store)` | 替換每日計數器持久化 port；未注入時使用 ESP32 Preferences |
 | `getCupState()` | 取得目前 `CupState` |
 | `getTodayTotalMl()` | 取得今日累計飲水量（ml） |
 | `getLastDrinkMl()` | 取得上次飲水量（ml） |

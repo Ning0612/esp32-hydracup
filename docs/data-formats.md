@@ -98,7 +98,9 @@ ESP32 Preferences 儲存於 NVS flash 分割區（0x9000，20 KB）。
 | `count` | UInt | 當日飲水次數 |
 | `last_ml` | Float | 上次飲水量（ml） |
 
-**日期重置機制**：`DrinkDetector.init()` 時比對 `period` 欄位與目前日期。若日期不同，先將舊數據傳給 `DailySummaryManager` 聚合處理，再重置所有欄位並以新日期寫入 NVS。
+**日期重置機制**：NTP 同步後，`DrinkDetector` 比對 `period` 欄位與目前日期。相同日期
+會還原計數；不同日期會先把舊數據留在 RAM，交由 `DailySummaryManager` 聚合，之後由
+`resetDailyCounters()` 清零並以新日期寫入 NVS。沒有既有資料時會建立當日的零值紀錄。
 
 ---
 

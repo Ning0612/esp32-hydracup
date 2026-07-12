@@ -6,13 +6,15 @@
 #include "AppState.h"
 #include "ReminderManager.h"
 #include "BuzzerController.h"
+#include "DrinkDetectorCore.h"
 
 class DiscordNotifier;
 class EventLogger;
 class TimeManager;
 class MqttPublisher;
 
-class DrinkDetector {
+class DrinkDetector : private DrinkDetectorEventSink,
+                      private DrinkDetectorEffects {
 public:
     void init(ScaleManager& scale, AppState& state, const AppConfig& cfg,
               ReminderManager& reminder, BuzzerController& buzzer);
@@ -22,14 +24,28 @@ public:
     void setEventLogger(EventLogger* el)         { _eventLog = el; }
     void setTimeManager(TimeManager* tm)         { _time     = tm; }
     void setMqttPublisher(MqttPublisher* mp)     { _mqtt     = mp; }
+    void setCounterPersistence(DrinkCounterPersistence* store) {
+        _counterStore = store;
+        _events.setPersistence(store);
+    }
 
     CupState getCupState()        const { return _state->cupState; }
-    float    getTodayTotalMl()    const { return _todayTotalMl; }
-    float    getLastDrinkMl()     const { return _lastDrinkMl; }
-    uint32_t getDrinkCountToday() const { return _drinkCount; }
+    float    getTodayTotalMl()    const { return _events.getTodayTotalMl(); }
+    float    getLastDrinkMl()     const { return _events.getLastDrinkMl(); }
+    uint32_t getDrinkCountToday() const { return _events.getDrinkCountToday(); }
     void     resetDailyCounters();
 
 private:
+    void onDrinkConfirmed(float amountMl) override;
+    void onRefillDetected(float amountMl) override;
+    void resetReminder() override;
+    void playDrinkBeep() override;
+    void notifyDrink(float amountMl, float totalMl, uint32_t drinkCount) override;
+    void logDrink(const char* timestamp, float amountMl, float totalMl) override;
+    void publishStatus(float totalMl, const char* event) override;
+
+    DrinkDetectorCore _core;
+    DrinkDetectorEventHandler _events;
     ScaleManager*     _scale      = nullptr;
     AppState*         _state      = nullptr;
     const AppConfig*  _cfg        = nullptr;
@@ -39,20 +55,12 @@ private:
     EventLogger*      _eventLog   = nullptr;
     TimeManager*      _time       = nullptr;
     MqttPublisher*    _mqtt       = nullptr;
+    DrinkCounterPersistence* _counterStore = nullptr;
 
-    float    _prevStableWeight      = 0.0f;
-    float    _todayTotalMl          = 0.0f;
-    float    _lastDrinkMl           = 0.0f;
-    uint32_t _drinkCount            = 0;
-    bool     _cupLifted             = false;
-    uint32_t _cupLiftedAtMs         = 0;
     bool     _nvsDone               = false;
 
-    void _transitionTo(CupState next);
-    void _onDrinkConfirmed(float amountMl);
-    void _onRefillDetected(float amountMl);
+    void _syncCupState();
     void _nvsRestore();
-    void _nvsSave();
 
     static const char* _cupStateName(CupState s);
 };
