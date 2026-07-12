@@ -288,10 +288,14 @@ void DiscordNotifier::_sendTask(void* param) {
 
                 if (code >= 200 && code < 300) {
                     ok = true;
-                } else if (code == 408 || code == 429 || code >= 500 || code < 0) {
-                    // Transient: request timeout, rate-limited, server error, or network failure
+                } else if (code == 408 || code == 429 || code >= 500) {
+                    // Transient HTTP response: request timeout, rate-limited, or server error
                     Serial.printf("[Discord] POST HTTP %d (retryable)\n", code);
                     retryable = true;
+                } else if (code < 0) {
+                    // Do not retry transport errors: the webhook may have received the body already.
+                    Serial.printf("[Discord] POST transport error %d (%s); not retrying to avoid duplicate sends\n",
+                                  code, http.errorToString(code).c_str());
                 } else {
                     // Permanent: bad request, wrong URL, auth error, etc.
                     Serial.printf("[Discord] POST HTTP %d (permanent failure)\n", code);

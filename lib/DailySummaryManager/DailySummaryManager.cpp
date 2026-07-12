@@ -48,11 +48,7 @@ void DailySummaryManager::_fire(const struct tm& now) {
     Serial.printf("[DailySummary] 00:00 settlement  total=%.0f ml  count=%u\n",
                   totalMl, (unsigned)drinkCount);
 
-    const bool notified = _discord->notifyDailySummary(totalMl, drinkCount, String(dateStr));
-    if (!notified) {
-        Serial.println("[DailySummary] Notification skipped (WiFi/webhook); counters reset anyway");
-    }
-
+    // Settle before sending so a reboot cannot re-run settlement and duplicate the summary.
     _detector->resetDailyCounters();
 
     _lastSettledKey = _time->getDateString();
@@ -60,4 +56,9 @@ void DailySummaryManager::_fire(const struct tm& now) {
     prefs.begin("daily_sum", false);
     prefs.putString("settled", _lastSettledKey);
     prefs.end();
+
+    const bool notified = _discord->notifyDailySummary(totalMl, drinkCount, String(dateStr));
+    if (!notified) {
+        Serial.println("[DailySummary] Notification skipped (WiFi/webhook); counters reset anyway");
+    }
 }
