@@ -1,5 +1,4 @@
 #include "ScaleManager.h"
-#include "ConfigManager.h"
 #include "pins.h"
 #include "config.h"
 
@@ -24,31 +23,72 @@ void ScaleManager::init(float calibFactor, long tareOffset,
 
 void ScaleManager::update() {
     if (!_ready) return;
+    if (isTareRunning() && millis() - _tareStartMs >= 2000) {
+        _tareRunning = false;
+        _tareWarming = false;
+        _tareFailed = true;
+        Serial.println("[Scale] Tare timed out");
+        return;
+    }
     if (millis() - _lastReadMs < HX711_READ_INTERVAL_MS) return;
     _lastReadMs = millis();
 
     if (_scale.is_ready()) {
-        _updateAverage(_scale.read());
+        const long raw = _scale.read();
+        if (_tareRunning) {
+            _tareSum += raw;
+            _tareCount++;
+            if (_tareCount >= SAMPLE_COUNT) _finishTare();
+            return;
+        }
+        _updateAverage(raw);
         _recalcWeight();
         _updateStability();
+        if (_tareWarming && _ringFilled >= SAMPLE_COUNT) {
+            _tareWarming = false;
+            _tareCompleted = true;
+            Serial.println("[Scale] Tare warm-up complete");
+        }
     }
 }
 
 void ScaleManager::tare() {
-    if (!_ready) return;
+    startTare();
+}
 
-    long sum   = 0;
-    uint8_t n  = 0;
-    for (uint8_t i = 0; i < SAMPLE_COUNT; i++) {
-        if (_scale.is_ready()) {
-            sum += _scale.read();
-            n++;
-        }
-        delay(HX711_READ_INTERVAL_MS);
+bool ScaleManager::startTare() {
+    if (!_ready || isTareRunning()) return false;
+    _tareRunning = true;
+    _tareWarming = false;
+    _tareCompleted = false;
+    _tareFailed = false;
+    _tareSum = 0;
+    _tareCount = 0;
+    _tareStartMs = millis();
+    _lastReadMs = 0;
+    return true;
+}
+
+bool ScaleManager::takeTareFailure() {
+    if (!_tareFailed) return false;
+    _tareFailed = false;
+    return true;
+}
+
+bool ScaleManager::takeTareResult(long& offset) {
+    if (!_tareCompleted) return false;
+    offset = _tareOffset;
+    _tareCompleted = false;
+    return true;
+}
+
+void ScaleManager::_finishTare() {
+    if (_tareCount == 0) {
+        _tareRunning = false;
+        return;
     }
-    if (n == 0) return;
 
-    _tareOffset = sum / n;
+    _tareOffset = _tareSum / _tareCount;
     _scale.set_offset(_tareOffset);
 
     _ringFilled  = 0;
@@ -57,14 +97,14 @@ void ScaleManager::tare() {
     _weightGrams = 0.0f;
     _stable      = false;
     _stableStartMs = millis();
-
-    if (_cfgMgr) _cfgMgr->saveCalibration(_calibFactor, _tareOffset);
+    _tareRunning = false;
+    _tareWarming = true;
+    _tareStartMs = millis();
     Serial.printf("[Scale] Tare: %ld\n", _tareOffset);
 }
 
 void ScaleManager::setCalibrationFactor(float factor) {
     _calibFactor = factor;
-    if (_cfgMgr) _cfgMgr->saveCalibration(_calibFactor, _tareOffset);
     _recalcWeight();
 }
 
@@ -75,7 +115,6 @@ float ScaleManager::calibrateWithKnownWeight(float knownGrams) {
     if (netRaw == 0) return _calibFactor;
 
     _calibFactor = static_cast<float>(netRaw) / knownGrams;
-    if (_cfgMgr) _cfgMgr->saveCalibration(_calibFactor, _tareOffset);
     _recalcWeight();
     Serial.printf("[Scale] Cal factor: %.4f  weight: %.1fg\n", _calibFactor, _weightGrams);
     return _calibFactor;

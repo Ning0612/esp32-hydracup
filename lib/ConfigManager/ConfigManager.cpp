@@ -1,8 +1,10 @@
 #include "ConfigManager.h"
 #include "config.h"
+#include "StorageLock.h"
 
 void ConfigManager::load(AppConfig& cfg) {
     _applyDefaults(cfg);
+    if (!lockNvs()) return;
     _prefs.begin(NVS_NAMESPACE, true);  // read-only
 
     cfg.wifiSsid             = _prefs.getString("wifi_ssid",     "");
@@ -47,9 +49,11 @@ void ConfigManager::load(AppConfig& cfg) {
     cfg.adminPasswordHash    = _prefs.getString("admin_hash",    "");
 
     _prefs.end();
+    unlockNvs();
 }
 
 void ConfigManager::save(const AppConfig& cfg) {
+    if (!lockNvs()) return;
     _prefs.begin(NVS_NAMESPACE, false);  // read-write
 
     _prefs.putString("wifi_ssid",    cfg.wifiSsid);
@@ -94,26 +98,37 @@ void ConfigManager::save(const AppConfig& cfg) {
     _prefs.putString("admin_hash",   cfg.adminPasswordHash);
 
     _prefs.end();
+    unlockNvs();
 }
 
-void ConfigManager::saveCalibration(float factor, long offset) {
-    _prefs.begin(NVS_NAMESPACE, false);
-    _prefs.putFloat("cal_factor",  factor);
-    _prefs.putLong ("tare_offset", offset);
+bool ConfigManager::saveCalibration(float factor, long offset) {
+    if (!lockNvs()) return false;
+    if (!_prefs.begin(NVS_NAMESPACE, false)) {
+        unlockNvs();
+        return false;
+    }
+    const bool ok = _prefs.putFloat("cal_factor", factor) == sizeof(float) &&
+                    _prefs.putLong("tare_offset", offset) == sizeof(int32_t);
     _prefs.end();
+    unlockNvs();
+    return ok;
 }
 
 void ConfigManager::saveWifi(const String& ssid, const String& password) {
+    if (!lockNvs()) return;
     _prefs.begin(NVS_NAMESPACE, false);
     _prefs.putString("wifi_ssid", ssid);
     _prefs.putString("wifi_pass", password);
     _prefs.end();
+    unlockNvs();
 }
 
 void ConfigManager::clear() {
+    if (!lockNvs()) return;
     _prefs.begin(NVS_NAMESPACE, false);
     _prefs.clear();
     _prefs.end();
+    unlockNvs();
 }
 
 void ConfigManager::_applyDefaults(AppConfig& cfg) {

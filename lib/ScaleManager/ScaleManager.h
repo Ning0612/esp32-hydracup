@@ -2,8 +2,6 @@
 #include <Arduino.h>
 #include <HX711.h>
 
-class ConfigManager;
-
 class ScaleManager {
 public:
     void init(float calibFactor, long tareOffset,
@@ -18,13 +16,15 @@ public:
     long  getRawAverage()         const { return _rawAvg; }
 
     void  tare();
+    bool  startTare();
+    bool  takeTareResult(long& offset);
+    bool  takeTareFailure();
+    bool  isTareRunning() const { return _tareRunning || _tareWarming; }
     void  setCalibrationFactor(float factor);
     float calibrateWithKnownWeight(float knownGrams);
 
     long  getTareOffset()        const { return _tareOffset; }
     float getCalibrationFactor() const { return _calibFactor; }
-
-    void  setConfigManager(ConfigManager* mgr) { _cfgMgr = mgr; }
 
 private:
     static const uint8_t SAMPLE_COUNT = 10;
@@ -51,9 +51,16 @@ private:
 
     uint32_t _lastReadMs = 0;
 
-    ConfigManager* _cfgMgr = nullptr;
+    bool     _tareRunning   = false;
+    bool     _tareWarming   = false;
+    bool     _tareCompleted = false;
+    bool     _tareFailed    = false;
+    long     _tareSum       = 0;
+    uint8_t  _tareCount     = 0;
+    uint32_t _tareStartMs   = 0;
 
     void _updateAverage(long raw);
     void _recalcWeight();
     void _updateStability();
+    void _finishTare();
 };

@@ -2,7 +2,9 @@
 
 ## 系統架構
 
-HydraCup 在 ESP32 上以 Arduino 框架運行，分為兩個互斥模式：
+HydraCup 在 ESP32 Arduino/FreeRTOS 上運行，分為兩個互斥模式。Arduino `loopTask`
+負責 Web 與健康監督；固定在 Arduino core 的高優先 `hydracup_control` task 負責感測與
+即時控制：
 
 ```
 ┌────────────────────────────────────────────────────────┐
@@ -19,6 +21,7 @@ HydraCup 在 ESP32 上以 Arduino 框架運行，分為兩個互斥模式：
 └────────────────────────────────────────────────────────┘
 
 ┌────────── Normal Mode ─────────────────────────────────┐
+│  TaskControl (10 ms, Core 1)                           │
 │  ScaleManager → DrinkDetector                          │
 │                     ├─→ EventLogger                    │
 │                     ├─→ DiscordNotifier                │
@@ -26,20 +29,26 @@ HydraCup 在 ESP32 上以 Arduino 框架運行，分為兩個互斥模式：
 │                     ├─→ BuzzerController               │
 │                     └─→ AppState                       │
 │                                                        │
-│  DashboardServer  (REST API + static web assets)       │
-│  DisplayManager   (OLED rotating pages)                │
-│  TimeManager      (NTP sync)                           │
-│  DailySummaryManager  (midnight Discord summary)       │
+│  ├─ ReminderManager / BuzzerController                 │
+│  ├─ DisplayManager / TimeManager                       │
+│  └─ DailySummaryManager                                │
+│                                                        │
+│  loopTask: DashboardServer + WiFi health               │
+│  workers: MQTT / Discord / EventLogger / counter NVS   │
 └────────────────────────────────────────────────────────┘
 ```
 
 ### 設計約束
 
-- `main.cpp` 只包含 `setup()` 與 `loop()`，**不含任何業務邏輯**
-- `loop()` 依序呼叫各模組的 `update()` 或 `loop()`
+- `hydracup_control` 是 Scale、Detector、Reminder、Buzzer、Display、Time 的單一 owner
+- `loopTask` 不直接存取上述模組的 mutable state；Dashboard 透過 snapshot / command 溝通
 - 絕對禁止在 `loop()` 或任何 `update()` 中使用 `delay()`
 - 所有計時使用 `millis()`
-- Discord HTTP POST 使用 FreeRTOS 獨立任務（非阻塞）
+- Discord 與 MQTT 各使用持久 FreeRTOS worker；兩者不共用阻塞 task
+- tare 是 10 筆、每 100 ms 一筆的非阻塞狀態機；期間暫停飲水偵測
+- NVS 操作透過共用 mutex 序列化；LogFS 讀寫也有獨立 mutex
+- counter restore worker 只載入 POD，由 TaskControl 套用；跨日資料即使非午夜開機也會立即結算
+- Daily settlement 等待 counter save ack，再由 storage worker 寫 settled marker，控制 task 不等待 flash
 
 ---
 
@@ -62,6 +71,8 @@ HydraCup 在 ESP32 上以 Arduino 框架運行，分為兩個互斥模式：
 | `EventLogger` | LittleFS JSONL 飲水事件日誌（依月份分檔） |
 | `TimeManager` | NTP 時間同步；提供 ISO-8601 時戳 |
 | `DailySummaryManager` | 每日午夜聚合統計並送出 Discord 摘要 |
+| `RuntimeCoordinator` | 一致 runtime snapshot、control command/result Queue |
+| `StorageLock` | 跨 task 序列化 Preferences/NVS 操作 |
 
 ---
 
@@ -79,8 +90,10 @@ HydraCup 在 ESP32 上以 Arduino 框架運行，分為兩個互斥模式：
    ├─ WiFi SSID 空白 → AP_MODE
    ├─ 連線失敗       → AP_MODE
    └─ 連線成功       → NORMAL
-9. NORMAL: NTP sync, DashboardServer start, loop()
-   AP_MODE: ConfigPortal start, loop()
+9. 建立 RuntimeCoordinator 與背景 workers
+10. 建立 `hydracup_control`；建立失敗時進入 degraded loop control，tare/calibrate API 停用
+11. NORMAL: DashboardServer 由 loopTask 服務
+    AP_MODE: ConfigPortal 由 loopTask 服務
 ```
 
 外設（OLED、HX711）初始化失敗時**不中斷開機**，僅記錄錯誤並設 `AppState.oledOk = false` / `hx711Ok = false`。

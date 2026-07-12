@@ -1,6 +1,8 @@
 #include "DashboardServer.h"
 #include <ArduinoJson.h>
 #include <WiFi.h>
+#include "DiscordNotifier.h"
+#include "EventLogger.h"
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
@@ -43,7 +45,8 @@ void DashboardServer::_serveFile(const char* path, const char* contentType) {
 void DashboardServer::begin(ScaleManager& scale, ConfigManager& cfgMgr,
                             AppState& state, AppConfig& cfg,
                             BuzzerController& buzzer, ReminderManager& reminder,
-                            fs::LittleFSFS& logFs) {
+                            fs::LittleFSFS& logFs, RuntimeCoordinator& runtime,
+                            EventLogger& eventLogger, DiscordNotifier& discord) {
     if (_server != nullptr) {
         Serial.println("[Dashboard] Already initialized");
         return;
@@ -55,6 +58,9 @@ void DashboardServer::begin(ScaleManager& scale, ConfigManager& cfgMgr,
     _buzzer   = &buzzer;
     _reminder = &reminder;
     _logFs    = &logFs;
+    _runtime = &runtime;
+    _eventLogger = &eventLogger;
+    _discord = &discord;
     _server   = new WebServer(80);
 
     _server->on("/",              HTTP_GET,  [this]{ _handleRoot();                });
@@ -76,6 +82,21 @@ void DashboardServer::begin(ScaleManager& scale, ConfigManager& cfgMgr,
     Serial.println("[Dashboard] HTTP server started on port 80");
 }
 
+bool DashboardServer::_runCommand(ControlCommandType type, uint32_t uintValue,
+                                  float floatValue, bool boolValue,
+                                  ControlResult* result, TickType_t timeoutTicks) {
+    if (!_runtime || !_runtime->isControlRunning()) return false;
+    ControlCommand command;
+    command.type = type;
+    command.uintValue = uintValue;
+    command.floatValue = floatValue;
+    command.boolValue = boolValue;
+    ControlResult localResult;
+    const bool ok = _runtime->request(command, localResult, timeoutTicks);
+    if (result) *result = localResult;
+    return ok;
+}
+
 void DashboardServer::loop() {
     if (_server) _server->handleClient();
 }
@@ -95,37 +116,51 @@ void DashboardServer::_handleCalibrationRedirect() {
 // ── API handlers ───────────────────────────────────────────────────────────
 
 void DashboardServer::_handleWeight() {
+    const RuntimeSnapshot runtime = _runtime ? _runtime->snapshot() : RuntimeSnapshot{};
     JsonDocument doc;
     doc["ok"]        = true;
-    doc["weight_g"]  = _scale->getWeightGrams();
-    doc["cup_state"] = (int)_state->cupState;
+    doc["weight_g"]  = _runtime && _runtime->isControlRunning()
+        ? runtime.weightGrams : _scale->getWeightGrams();
+    doc["cup_state"] = (int)(_runtime && _runtime->isControlRunning()
+        ? runtime.cupState : _state->cupState);
     String json; serializeJson(doc, json);
     _server->send(200, "application/json", json);
 }
 
 void DashboardServer::_handleStatus() {
+    const RuntimeSnapshot runtime = _runtime ? _runtime->snapshot() : RuntimeSnapshot{};
+    const bool rtos = _runtime && _runtime->isControlRunning();
+    const CupState cupState = rtos ? runtime.cupState : _state->cupState;
     JsonDocument doc;
     doc["ok"]                = true;
     doc["mode"]              = "normal";
-    doc["wifi_connected"]    = _state->wifiConnected;
-    doc["ip"]                = _state->ipAddress;
-    doc["ntp_synced"]        = _state->ntpSynced;
-    doc["weight_g"]          = _scale->getWeightGrams();
-    doc["cup_state"]         = (int)_state->cupState;
-    doc["cup_state_name"]    = _cupStateStr(_state->cupState);
-    doc["today_total_ml"]    = _state->todayTotalMl;
+    doc["wifi_connected"]    = rtos ? runtime.wifiConnected : _state->wifiConnected;
+    doc["ip"]                = rtos ? runtime.ipAddress : _state->ipAddress.c_str();
+    doc["ntp_synced"]        = rtos ? runtime.ntpSynced : _state->ntpSynced;
+    doc["weight_g"]          = rtos ? runtime.weightGrams : _scale->getWeightGrams();
+    doc["cup_state"]         = (int)cupState;
+    doc["cup_state_name"]    = _cupStateStr(cupState);
+    doc["today_total_ml"]    = rtos ? runtime.todayTotalMl : _state->todayTotalMl;
     doc["daily_goal_ml"]     = _cfg->dailyGoalMl;
-    doc["drink_count_today"] = _state->drinkCountToday;
-    doc["last_drink_ml"]     = _state->lastDrinkMl;
-    doc["next_reminder_sec"] = _state->nextReminderSec;
+    doc["drink_count_today"] = rtos ? runtime.drinkCountToday : _state->drinkCountToday;
+    doc["last_drink_ml"]     = rtos ? runtime.lastDrinkMl : _state->lastDrinkMl;
+    doc["next_reminder_sec"] = rtos ? runtime.nextReminderSec : _state->nextReminderSec;
     doc["webhook_configured"] = _state->webhookConfigured;
     doc["webhook_last_ok"]   = _state->webhookLastOk.load();
+    doc["discord_worker_ready"] = _discord && _discord->isWorkerReady();
+    doc["discord_queue_drops"] = _discord ? _discord->getDroppedCount() : 0;
     doc["mqtt_configured"]   = _state->mqttConfigured;
     doc["mqtt_connected"]    = _state->mqttConnected.load();
     doc["hw_hx711"]          = _state->hx711Ok;
     doc["hw_oled"]           = _state->oledOk;
     doc["hw_fs"]             = _state->fsOk;
     doc["hw_logfs"]          = _state->logFsOk;
+    doc["rtos"]              = rtos;
+    doc["rtos_healthy"]      = _runtime && _runtime->isControlHealthy();
+    doc["rtos_sequence"]     = runtime.sequence;
+    doc["rtos_command_drops"] = runtime.commandDrops;
+    doc["rtos_result_drops"]  = runtime.resultDrops;
+    doc["log_queue_drops"]    = _eventLogger ? _eventLogger->getDroppedCount() : 0;
     String json; serializeJson(doc, json);
     _server->send(200, "application/json", json);
 }
@@ -157,7 +192,9 @@ void DashboardServer::_handleGetConfig() {
     doc["mqttPasswordSet"]         = !_cfg->mqttPassword.isEmpty();
     doc["mqttClientId"]            = _cfg->mqttClientId;
     doc["mqttHeartbeatSec"]        = _cfg->mqttHeartbeatSec;
-    doc["calibrationFactor"]       = _scale->getCalibrationFactor();
+    const RuntimeSnapshot runtime = _runtime ? _runtime->snapshot() : RuntimeSnapshot{};
+    doc["calibrationFactor"]       = _runtime && _runtime->isControlRunning()
+        ? runtime.calibrationFactor : _scale->getCalibrationFactor();
     doc["cupPresentThresholdGram"] = _cfg->cupPresentThresholdGram;
     doc["stableToleranceGram"]     = _cfg->stableToleranceGram;
     doc["stableDurationMs"]        = _cfg->stableDurationMs;
@@ -179,47 +216,79 @@ void DashboardServer::_handlePostConfig() {
     }
 
     bool rebootRequired = false;
+    bool controlCommandsOk = true;
 
     // Hydration — clamp to [100, 9999]
     if (!doc["dailyGoalMl"].isNull()) {
         _cfg->dailyGoalMl = (uint32_t)constrain((long)doc["dailyGoalMl"], 100L, 9999L);
+        if (_runtime && _runtime->isControlRunning())
+            controlCommandsOk &= _runCommand(ControlCommandType::SET_DAILY_GOAL_ML,
+                                             _cfg->dailyGoalMl);
     }
 
     // Reminder — apply immediately
     if (!doc["reminderEnabled"].isNull()) {
         _cfg->reminderEnabled = (bool)doc["reminderEnabled"];
-        _reminder->setEnabled(_cfg->reminderEnabled);
+        if (_runtime && _runtime->isControlRunning())
+            controlCommandsOk &= _runCommand(ControlCommandType::SET_REMINDER_ENABLED,
+                                             0, 0.0f, _cfg->reminderEnabled);
+        else
+            _reminder->setEnabled(_cfg->reminderEnabled);
     }
     if (!doc["reminderIntervalMin"].isNull()) {
         _cfg->reminderIntervalMin =
             (uint32_t)constrain((long)doc["reminderIntervalMin"], 1L, 1440L);
-        _reminder->setIntervalMin(_cfg->reminderIntervalMin);
+        if (_runtime && _runtime->isControlRunning())
+            controlCommandsOk &= _runCommand(ControlCommandType::SET_REMINDER_INTERVAL_MIN,
+                                             _cfg->reminderIntervalMin);
+        else
+            _reminder->setIntervalMin(_cfg->reminderIntervalMin);
     }
     if (!doc["reminderAlertTimeoutSec"].isNull()) {
         _cfg->reminderAlertTimeoutSec =
             (uint32_t)constrain((long)doc["reminderAlertTimeoutSec"], 5L, 3600L);
-        _reminder->setAlertTimeoutSec(_cfg->reminderAlertTimeoutSec);
+        if (_runtime && _runtime->isControlRunning())
+            controlCommandsOk &= _runCommand(ControlCommandType::SET_REMINDER_ALERT_TIMEOUT_SEC,
+                                             _cfg->reminderAlertTimeoutSec);
+        else
+            _reminder->setAlertTimeoutSec(_cfg->reminderAlertTimeoutSec);
     }
 
     // Buzzer — apply immediately
     if (!doc["buzzerEnabled"].isNull()) {
         _cfg->buzzerEnabled = (bool)doc["buzzerEnabled"];
-        _buzzer->setEnabled(_cfg->buzzerEnabled);
+        if (_runtime && _runtime->isControlRunning())
+            controlCommandsOk &= _runCommand(ControlCommandType::SET_BUZZER_ENABLED,
+                                             0, 0.0f, _cfg->buzzerEnabled);
+        else
+            _buzzer->setEnabled(_cfg->buzzerEnabled);
     }
     if (!doc["buzzerFrequencyHz"].isNull()) {
         _cfg->buzzerFrequencyHz =
             (uint32_t)constrain((long)doc["buzzerFrequencyHz"], 500L, 5000L);
-        _buzzer->setFrequency(_cfg->buzzerFrequencyHz);
+        if (_runtime && _runtime->isControlRunning())
+            controlCommandsOk &= _runCommand(ControlCommandType::SET_BUZZER_FREQUENCY_HZ,
+                                             _cfg->buzzerFrequencyHz);
+        else
+            _buzzer->setFrequency(_cfg->buzzerFrequencyHz);
     }
     if (!doc["buzzerVolumePercent"].isNull()) {
         _cfg->buzzerVolumePercent =
             (uint8_t)constrain((long)doc["buzzerVolumePercent"], 0L, 100L);
-        _buzzer->setVolume(_cfg->buzzerVolumePercent);
+        if (_runtime && _runtime->isControlRunning())
+            controlCommandsOk &= _runCommand(ControlCommandType::SET_BUZZER_VOLUME_PERCENT,
+                                             _cfg->buzzerVolumePercent);
+        else
+            _buzzer->setVolume(_cfg->buzzerVolumePercent);
     }
     if (!doc["buzzerDurationMs"].isNull()) {
         _cfg->buzzerDurationMs =
             (uint32_t)constrain((long)doc["buzzerDurationMs"], 50L, 2000L);
-        _buzzer->setDuration(_cfg->buzzerDurationMs);
+        if (_runtime && _runtime->isControlRunning())
+            controlCommandsOk &= _runCommand(ControlCommandType::SET_BUZZER_DURATION_MS,
+                                             _cfg->buzzerDurationMs);
+        else
+            _buzzer->setDuration(_cfg->buzzerDurationMs);
     }
 
     // WiFi — needs reboot
@@ -310,36 +379,47 @@ void DashboardServer::_handlePostConfig() {
     applyUint16("mqttHeartbeatSec", _cfg->mqttHeartbeatSec, 5L, 3600L);
 
     _cfgMgr->save(*_cfg);
+    if (_discord) _discord->configure(*_cfg);
+    if (!controlCommandsOk) rebootRequired = true;
 
     JsonDocument resp;
     resp["ok"]              = true;
     resp["reboot_required"] = rebootRequired;
+    resp["control_applied"] = controlCommandsOk;
     String json; serializeJson(resp, json);
     _server->send(200, "application/json", json);
 }
 
 void DashboardServer::_handleTare() {
-    if (!_scale->isReady()) {
-        _server->send(503, "application/json", "{\"ok\":false,\"error\":\"HX711 not ready\"}");
+    if (_runtime && _runtime->isControlRunning()) {
+        ControlResult result;
+        if (!_runCommand(ControlCommandType::TARE, 0, 0.0f, false,
+                         &result, pdMS_TO_TICKS(4500))) {
+            const int code = result.status == ControlResultStatus::BUSY ? 409 :
+                             result.status == ControlResultStatus::NOT_READY ? 503 : 504;
+            _server->send(code, "application/json",
+                          "{\"ok\":false,\"error\":\"tare_failed_or_timed_out\"}");
+            return;
+        }
+        _cfg->tareOffset = result.tareOffset;
+        _cfg->calibrationFactor = result.calibrationFactor;
+        if (!_cfgMgr->saveCalibration(result.calibrationFactor, result.tareOffset)) {
+            _server->send(500, "application/json",
+                          "{\"ok\":false,\"error\":\"tare_applied_but_persist_failed\"}");
+            return;
+        }
+        _server->send(200, "application/json", "{\"ok\":true}");
         return;
     }
-    if (!_scale->isSamplesReady()) {
-        _server->send(503, "application/json",
-                      "{\"ok\":false,\"error\":\"Warming up, try again shortly\"}");
-        return;
-    }
-    _scale->tare();
-    _server->send(200, "application/json", "{\"ok\":true}");
+
+    _server->send(503, "application/json",
+                  "{\"ok\":false,\"error\":\"rtos_control_unavailable\"}");
 }
 
 void DashboardServer::_handleCalibrate() {
-    if (!_scale->isReady()) {
-        _server->send(503, "application/json", "{\"ok\":false,\"error\":\"HX711 not ready\"}");
-        return;
-    }
-    if (!_scale->isSamplesReady()) {
+    if (!_runtime || !_runtime->isControlRunning()) {
         _server->send(503, "application/json",
-                      "{\"ok\":false,\"error\":\"Warming up, try again shortly\"}");
+                      "{\"ok\":false,\"error\":\"rtos_control_unavailable\"}");
         return;
     }
     if (!_server->hasArg("plain")) {
@@ -362,7 +442,26 @@ void DashboardServer::_handleCalibrate() {
                       "{\"ok\":false,\"error\":\"known_weight_g must be > 0\"}");
         return;
     }
-    const float factor = _scale->calibrateWithKnownWeight(knownG);
+    float factor;
+    float currentWeight;
+    ControlResult result;
+    if (!_runCommand(ControlCommandType::CALIBRATE, 0, knownG, false,
+                     &result, pdMS_TO_TICKS(750))) {
+        const int code = result.status == ControlResultStatus::BUSY ? 409 :
+                         result.status == ControlResultStatus::NOT_READY ? 503 : 500;
+        _server->send(code, "application/json",
+                      "{\"ok\":false,\"error\":\"calibration_failed\"}");
+        return;
+    }
+    factor = result.calibrationFactor;
+    currentWeight = result.weightGrams;
+    _cfg->calibrationFactor = factor;
+    _cfg->tareOffset = result.tareOffset;
+    if (!_cfgMgr->saveCalibration(factor, result.tareOffset)) {
+        _server->send(500, "application/json",
+                      "{\"ok\":false,\"error\":\"calibration_applied_but_persist_failed\"}");
+        return;
+    }
     if (factor == 0.0f) {
         _server->send(500, "application/json",
                       "{\"ok\":false,\"error\":\"Calibration failed: net raw is zero\"}");
@@ -371,7 +470,7 @@ void DashboardServer::_handleCalibrate() {
     JsonDocument resp;
     resp["ok"]                 = true;
     resp["calibration_factor"] = factor;
-    resp["current_weight_g"]   = _scale->getWeightGrams();
+    resp["current_weight_g"]   = currentWeight;
     String json; serializeJson(resp, json);
     _server->send(200, "application/json", json);
 }
@@ -454,8 +553,14 @@ void DashboardServer::_handleLogs() {
     }
 
     const String path = "/logs/drink-" + month + ".jsonl";
+    if (_eventLogger && !_eventLogger->lockFilesystem(pdMS_TO_TICKS(2000))) {
+        _server->send(503, "application/json",
+                      "{\"ok\":false,\"error\":\"logfs_busy\"}");
+        return;
+    }
     File f = _logFs->open(path, "r");
     if (!f) {
+        if (_eventLogger) _eventLogger->unlockFilesystem();
         _server->send(200, "application/json",
                       "{\"ok\":true,\"month\":\"" + month + "\",\"entries\":[],\"skipped\":0}");
         return;
@@ -484,4 +589,5 @@ void DashboardServer::_handleLogs() {
 
     _server->sendContent("],\"skipped\":" + String(skipped) + "}");
     f.close();
+    if (_eventLogger) _eventLogger->unlockFilesystem();
 }

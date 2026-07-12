@@ -332,6 +332,49 @@ void test_event_handler_empty_restore_initializes_persistence() {
     TEST_ASSERT_EQUAL_UINT32(0, persistence.lastSaved.drinkCount);
 }
 
+void test_event_handler_load_failure_preserves_ram_counters() {
+    RecordingPersistence persistence;
+    RecordingEffects effects;
+    DrinkDetectorEventHandler handler;
+    handler.init(&persistence, &effects);
+    handler.onDrinkConfirmed(40.0f, "", "boot+100ms");
+    const int savesBefore = persistence.saveCalls;
+    DrinkCounterSnapshot unavailable;
+
+    TEST_ASSERT_EQUAL_INT(static_cast<int>(DrinkCounterLoadStatus::LOAD_FAILED),
+                          static_cast<int>(handler.applyRestore(
+                              DrinkCounterLoadStatus::LOAD_FAILED, unavailable,
+                              "2026-07-13")));
+    TEST_ASSERT_FLOAT_WITHIN(0.01f, 40.0f, handler.getTodayTotalMl());
+    TEST_ASSERT_EQUAL_UINT32(1, handler.getDrinkCountToday());
+    TEST_ASSERT_EQUAL_INT(savesBefore, persistence.saveCalls);
+}
+
+void test_event_handler_merges_pre_restore_snapshot() {
+    RecordingPersistence persistence;
+    RecordingEffects effects;
+    DrinkDetectorEventHandler handler;
+    handler.init(&persistence, &effects);
+    DrinkCounterSnapshot persisted;
+    std::strcpy(persisted.period, "2026-07-13");
+    persisted.totalMl = 300.0f;
+    persisted.lastDrinkMl = 100.0f;
+    persisted.drinkCount = 3;
+    handler.applyRestore(DrinkCounterLoadStatus::CURRENT_PERIOD, persisted, "2026-07-13");
+
+    DrinkCounterSnapshot preSync;
+    preSync.totalMl = 50.0f;
+    preSync.lastDrinkMl = 50.0f;
+    preSync.drinkCount = 1;
+    handler.mergeSnapshot(preSync, "2026-07-13");
+
+    TEST_ASSERT_FLOAT_WITHIN(0.01f, 350.0f, handler.getTodayTotalMl());
+    TEST_ASSERT_FLOAT_WITHIN(0.01f, 50.0f, handler.getLastDrinkMl());
+    TEST_ASSERT_EQUAL_UINT32(4, handler.getDrinkCountToday());
+    TEST_ASSERT_EQUAL_INT(1, persistence.saveCalls);
+    TEST_ASSERT_FLOAT_WITHIN(0.01f, 350.0f, persistence.lastSaved.totalMl);
+}
+
 void test_event_handler_refill_only_publishes_status() {
     RecordingPersistence persistence;
     RecordingEffects effects;
@@ -377,6 +420,8 @@ int main(int argc, char** argv) {
     RUN_TEST(test_event_handler_restores_and_dispatches_drink_effects);
     RUN_TEST(test_event_handler_previous_restore_and_reset_save);
     RUN_TEST(test_event_handler_empty_restore_initializes_persistence);
+    RUN_TEST(test_event_handler_load_failure_preserves_ram_counters);
+    RUN_TEST(test_event_handler_merges_pre_restore_snapshot);
     RUN_TEST(test_event_handler_refill_only_publishes_status);
     RUN_TEST(test_refill_above_drink_maximum_keeps_existing_refill_rule);
     return UNITY_END();

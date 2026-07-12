@@ -7,7 +7,7 @@ class ConfigManager {
 public:
     void load(AppConfig& cfg);
     void save(const AppConfig& cfg);
-    void saveCalibration(float factor, long offset);
+    bool saveCalibration(float factor, long offset);
     void saveWifi(const String& ssid, const String& password);
     void clear();
 

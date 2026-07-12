@@ -25,7 +25,8 @@ void copyTruncated(char* dst, size_t dstSize, const String& src, const char* fie
 
 void MqttPublisher::init(AppState& state, const AppConfig& cfg) {
     _state = &state;
-    _cfg   = &cfg;
+    _dailyGoalMl.store(cfg.dailyGoalMl, std::memory_order_relaxed);
+    _heartbeatSec = cfg.mqttHeartbeatSec;
 
     _enabled = cfg.mqttEnabled && !cfg.mqttBrokerHost.isEmpty();
     _state->mqttConfigured = _enabled;
@@ -65,7 +66,7 @@ void MqttPublisher::init(AppState& state, const AppConfig& cfg) {
 void MqttPublisher::publishStatus(float currentMl, const char* event) {
     if (!_enabled || !_publishQueue) return;
 
-    const uint32_t goalMl = _cfg->dailyGoalMl;
+    const uint32_t goalMl = _dailyGoalMl.load(std::memory_order_relaxed);
 
     JsonDocument doc;
     doc["current_ml"] = (int)constrain(currentMl, 0.0f, 9999.0f);
@@ -87,11 +88,11 @@ void MqttPublisher::publishStatus(float currentMl, const char* event) {
     }
 }
 
-void MqttPublisher::loop() {
+void MqttPublisher::loop(float todayTotalMl) {
     if (!_enabled) return;
 
     const uint32_t now = millis();
-    const uint32_t heartbeatMs = (uint32_t)_cfg->mqttHeartbeatSec * 1000UL;
+    const uint32_t heartbeatMs = (uint32_t)_heartbeatSec * 1000UL;
     if (heartbeatMs == 0 || (now - _lastPublishMs) < heartbeatMs) return;
 
     // Skip while disconnected: nothing would deliver it anyway, and it would just
@@ -101,7 +102,7 @@ void MqttPublisher::loop() {
     if (!_state->mqttConnected.load(std::memory_order_relaxed)) return;
 
     _lastPublishMs = now;
-    publishStatus(_state->todayTotalMl, "heartbeat");
+    publishStatus(todayTotalMl, "heartbeat");
 }
 
 void MqttPublisher::_taskFunc(void* param) {

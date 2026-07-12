@@ -81,10 +81,18 @@ Normal Mode 下運行，ESP32 連上 WiFi 後提供。
   "next_reminder_sec": 1800,
   "webhook_configured": true,
   "webhook_last_ok": true,
+  "discord_worker_ready": true,
+  "discord_queue_drops": 0,
   "hw_hx711": true,
   "hw_oled": true,
   "hw_fs": true,
-  "hw_logfs": true
+  "hw_logfs": true,
+  "rtos": true,
+  "rtos_healthy": true,
+  "rtos_sequence": 8124,
+  "rtos_command_drops": 0,
+  "rtos_result_drops": 0,
+  "log_queue_drops": 0
 }
 ```
 
@@ -104,10 +112,18 @@ Normal Mode 下運行，ESP32 連上 WiFi 後提供。
 | `next_reminder_sec` | uint32 | 下次提醒倒數（秒） |
 | `webhook_configured` | bool | Webhook URL 已設定 |
 | `webhook_last_ok` | bool | 最後一次 Webhook 是否成功 |
+| `discord_worker_ready` | bool | 持久 Discord worker 已建立 |
+| `discord_queue_drops` | uint32 | Discord Queue 滿或不可用的累計丟棄數 |
 | `hw_hx711` | bool | HX711 初始化成功 |
 | `hw_oled` | bool | OLED 初始化成功 |
 | `hw_fs` | bool | webfs 初始化成功 |
 | `hw_logfs` | bool | logfs 初始化成功 |
+| `rtos` | bool | control task 已啟動 |
+| `rtos_healthy` | bool | 最近 2 秒內收到 control heartbeat |
+| `rtos_sequence` | uint32 | runtime snapshot 發布序號 |
+| `rtos_command_drops` | uint32 | control command Queue 滿的累計次數 |
+| `rtos_result_drops` | uint32 | command result Queue 滿的累計次數 |
+| `log_queue_drops` | uint32 | 非同步飲水 log 無法排入/寫入的累計次數 |
 
 ---
 
@@ -178,22 +194,28 @@ Normal Mode 下運行，ESP32 連上 WiFi 後提供。
 }
 ```
 
-若 WiFi 設定有異動，裝置會自動重啟。
+WiFi、NTP、MQTT 或進階感測器設定有異動時，回應會要求重新啟動。
 
 **回應**
 
 ```json
 {
   "ok": true,
-  "reboot_required": true
+  "reboot_required": true,
+  "control_applied": true
 }
 ```
 
-`reboot_required` 為 `true` 表示 WiFi 設定有異動，裝置即將重啟。
+`reboot_required` 為 `true` 表示至少一項設定需重啟後完整套用；`control_applied`
+表示 daily goal、reminder 與 buzzer 的即時 control commands 都已成功處理。
 
 ---
 
 ### `POST /api/tare`
+
+歸零由 TaskControl 收集 10 筆 tare 樣本，再等待 10 筆 warm-up 樣本。HTTP handler
+最多等待 4.5 秒；
+執行期間再次要求會回傳 `409`，尚未暖機回傳 `503`。
 
 秤重歸零（Tare）。將目前重量設為 0 基準點並儲存偏移至 NVS。
 

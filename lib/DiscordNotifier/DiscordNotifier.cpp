@@ -5,36 +5,61 @@
 
 void DiscordNotifier::init(AppState& state, const AppConfig& cfg) {
     _state = &state;
-    _cfg   = &cfg;
-    _state->webhookConfigured = !_cfg->discordWebhookUrl.isEmpty();
+    _configMutex = xSemaphoreCreateMutex();
+    _highQueue = xQueueCreate(6, sizeof(TaskParam*));
+    _lowQueue = xQueueCreate(1, sizeof(TaskParam*));
+    configure(cfg);
     _state->webhookLastOk.store(false, std::memory_order_relaxed);
+    if (!_configMutex || !_highQueue || !_lowQueue ||
+        xTaskCreate(_workerTask, "discord_worker", 8192, this, 1, &_workerHandle) != pdPASS) {
+        Serial.println("[Discord] persistent worker creation failed");
+        _state->webhookConfigured = false;
+        return;
+    }
+    _workerReady.store(true, std::memory_order_release);
+    _state->webhookConfigured = (_webhookUrl[0] != '\0');
     Serial.printf("[Discord] init  configured=%s\n",
                   _state->webhookConfigured ? "yes" : "no");
 }
 
+void DiscordNotifier::configure(const AppConfig& cfg) {
+    if (!_configMutex || xSemaphoreTake(_configMutex, pdMS_TO_TICKS(100)) != pdTRUE) return;
+    const size_t length = cfg.discordWebhookUrl.length();
+    if (length >= sizeof(_webhookUrl)) {
+        Serial.printf("[Discord] webhook URL too long (%u bytes), truncated\n", (unsigned)length);
+    }
+    strncpy(_webhookUrl, cfg.discordWebhookUrl.c_str(), sizeof(_webhookUrl) - 1);
+    _webhookUrl[sizeof(_webhookUrl) - 1] = '\0';
+    _dailyGoalMl = cfg.dailyGoalMl > 0 ? cfg.dailyGoalMl : 2000;
+    if (_state) _state->webhookConfigured =
+        (_webhookUrl[0] != '\0') && _workerReady.load(std::memory_order_acquire);
+    xSemaphoreGive(_configMutex);
+}
+
+bool DiscordNotifier::_copyConfig(char* webhookUrl, size_t size, uint32_t& dailyGoalMl) {
+    if (!_configMutex || xSemaphoreTake(_configMutex, pdMS_TO_TICKS(100)) != pdTRUE) return false;
+    strncpy(webhookUrl, _webhookUrl, size - 1);
+    webhookUrl[size - 1] = '\0';
+    dailyGoalMl = _dailyGoalMl;
+    xSemaphoreGive(_configMutex);
+    return webhookUrl[0] != '\0';
+}
+
 void DiscordNotifier::notifyOnline(const String& ipAddress) {
-    if (!_cfg || _cfg->discordWebhookUrl.isEmpty()) return;
+    char webhookUrl[512];
+    uint32_t goalMl;
+    if (!_copyConfig(webhookUrl, sizeof(webhookUrl), goalMl)) return;
+    (void)goalMl;
     if (!WiFi.isConnected()) return;
     if (ipAddress.isEmpty() || ipAddress == "0.0.0.0") return;
-
-    bool expected = false;
-    if (!_onlineTaskRunning.compare_exchange_strong(expected, true)) {
-        Serial.println("[Discord] Drop online: previous send in progress");
-        return;
-    }
 
     TaskParam* p = new TaskParam();
     if (!p) {
         Serial.println("[Discord] notifyOnline failed: heap alloc failed");
-        _onlineTaskRunning.store(false);
         return;
     }
 
-    const size_t urlLen = _cfg->discordWebhookUrl.length();
-    if (urlLen >= sizeof(p->webhookUrl)) {
-        Serial.printf("[Discord] notifyOnline: webhook URL too long (%u bytes), truncated\n", urlLen);
-    }
-    strncpy(p->webhookUrl, _cfg->discordWebhookUrl.c_str(), sizeof(p->webhookUrl) - 1);
+    strncpy(p->webhookUrl, webhookUrl, sizeof(p->webhookUrl) - 1);
     p->webhookUrl[sizeof(p->webhookUrl) - 1] = '\0';
 
     const int onlineWritten = snprintf(p->body, sizeof(p->body),
@@ -44,18 +69,13 @@ void DiscordNotifier::notifyOnline(const String& ipAddress) {
         Serial.println("[Discord] notifyOnline: body truncated");
     }
 
-    p->lastOkPtr      = &_state->webhookLastOk;
-    p->taskRunningPtr = &_onlineTaskRunning;
-
-    if (xTaskCreate(_sendTask, "discord_online", 8192, p, 1, nullptr) != pdPASS) {
-        Serial.println("[Discord] xTaskCreate failed (online)");
-        delete p;
-        _onlineTaskRunning.store(false);
-    }
+    _enqueue(p, false);
 }
 
 void DiscordNotifier::notifyDrink(float amountMl, float totalMl, uint32_t drinkCount) {
-    if (!_cfg || _cfg->discordWebhookUrl.isEmpty()) {
+    char webhookUrl[512];
+    uint32_t goalMl;
+    if (!_copyConfig(webhookUrl, sizeof(webhookUrl), goalMl)) {
         Serial.println("[Discord] notifyDrink skipped: webhook URL not configured");
         return;
     }
@@ -64,28 +84,15 @@ void DiscordNotifier::notifyDrink(float amountMl, float totalMl, uint32_t drinkC
         return;
     }
 
-    // Atomic check-and-set: prevents double-task on preemption
-    bool expected = false;
-    if (!_taskRunning.compare_exchange_strong(expected, true)) {
-        Serial.println("[Discord] Drop: previous send in progress");
-        return;
-    }
-
     TaskParam* p = new TaskParam();
     if (!p) {
         Serial.println("[Discord] notifyDrink failed: heap alloc failed");
-        _taskRunning.store(false);
         return;
     }
 
-    const size_t urlLen = _cfg->discordWebhookUrl.length();
-    if (urlLen >= sizeof(p->webhookUrl)) {
-        Serial.printf("[Discord] notifyDrink: webhook URL too long (%u bytes), truncated\n", urlLen);
-    }
-    strncpy(p->webhookUrl, _cfg->discordWebhookUrl.c_str(), sizeof(p->webhookUrl) - 1);
+    strncpy(p->webhookUrl, webhookUrl, sizeof(p->webhookUrl) - 1);
     p->webhookUrl[sizeof(p->webhookUrl) - 1] = '\0';
 
-    const uint32_t goalMl = _cfg->dailyGoalMl > 0 ? _cfg->dailyGoalMl : 2000;
     const float    pct    = (totalMl / (float)goalMl) * 100.0f;
     const float    remain = totalMl >= (float)goalMl ? 0.0f : ((float)goalMl - totalMl);
 
@@ -125,22 +132,16 @@ void DiscordNotifier::notifyDrink(float amountMl, float totalMl, uint32_t drinkC
     if (written >= (int)sizeof(p->body)) {
         Serial.println("[Discord] notifyDrink: body truncated, aborting POST");
         delete p;
-        _taskRunning.store(false);
         return;
     }
 
-    p->lastOkPtr      = &_state->webhookLastOk;
-    p->taskRunningPtr = &_taskRunning;
-
-    if (xTaskCreate(_sendTask, "discord_send", 8192, p, 1, nullptr) != pdPASS) {
-        Serial.println("[Discord] xTaskCreate failed");
-        delete p;
-        _taskRunning.store(false);
-    }
+    _enqueue(p, true);
 }
 
 bool DiscordNotifier::notifyDailySummary(float totalMl, uint32_t drinkCount, const String& dateStr) {
-    if (!_cfg || _cfg->discordWebhookUrl.isEmpty()) {
+    char webhookUrl[512];
+    uint32_t goalMl;
+    if (!_copyConfig(webhookUrl, sizeof(webhookUrl), goalMl)) {
         Serial.println("[Discord] notifyDailySummary skipped: webhook not configured");
         return false;
     }
@@ -149,23 +150,15 @@ bool DiscordNotifier::notifyDailySummary(float totalMl, uint32_t drinkCount, con
         return false;
     }
 
-    bool expected = false;
-    if (!_summaryTaskRunning.compare_exchange_strong(expected, true)) {
-        Serial.println("[Discord] Drop summary: previous send in progress");
-        return false;
-    }
-
     TaskParam* p = new TaskParam();
     if (!p) {
         Serial.println("[Discord] notifyDailySummary failed: heap alloc failed");
-        _summaryTaskRunning.store(false);
         return false;
     }
 
-    strncpy(p->webhookUrl, _cfg->discordWebhookUrl.c_str(), sizeof(p->webhookUrl) - 1);
+    strncpy(p->webhookUrl, webhookUrl, sizeof(p->webhookUrl) - 1);
     p->webhookUrl[sizeof(p->webhookUrl) - 1] = '\0';
 
-    const uint32_t goalMl   = _cfg->dailyGoalMl > 0 ? _cfg->dailyGoalMl : 2000;
     const float    pct      = (totalMl > 0.0f) ? (totalMl / (float)goalMl) * 100.0f : 0.0f;
     const bool     achieved = (totalMl >= (float)goalMl);
     const float    remain   = achieved ? 0.0f : ((float)goalMl - totalMl);
@@ -235,30 +228,16 @@ bool DiscordNotifier::notifyDailySummary(float totalMl, uint32_t drinkCount, con
     if (written >= (int)sizeof(p->body)) {
         Serial.println("[Discord] notifyDailySummary: body truncated, aborting POST");
         delete p;
-        _summaryTaskRunning.store(false);
         return false;
     }
 
-    p->lastOkPtr      = &_state->webhookLastOk;
-    p->taskRunningPtr = &_summaryTaskRunning;
-
-    if (xTaskCreate(_sendTask, "discord_summary", 8192, p, 1, nullptr) != pdPASS) {
-        Serial.println("[Discord] xTaskCreate failed (summary)");
-        delete p;
-        _summaryTaskRunning.store(false);
-        return false;
-    }
-    return true;
+    return _enqueue(p, true);
 }
 
 void DiscordNotifier::update() {
-    if (_state && _cfg) {
-        _state->webhookConfigured = !_cfg->discordWebhookUrl.isEmpty();
-    }
 }
 
-void DiscordNotifier::_sendTask(void* param) {
-    TaskParam* p = static_cast<TaskParam*>(param);
+void DiscordNotifier::_send(TaskParam* p) {
 
     // 3 total attempts; delays (ms) before attempt 1 and 2
     static constexpr int      MAX_ATTEMPTS = 3;
@@ -306,10 +285,45 @@ void DiscordNotifier::_sendTask(void* param) {
         if (ok || !retryable) break;
     }
 
-    p->lastOkPtr->store(ok, std::memory_order_release);
+    if (_state) _state->webhookLastOk.store(ok, std::memory_order_release);
     Serial.printf("[Discord] POST %s\n", ok ? "OK" : "FAILED (all attempts exhausted)");
-
-    p->taskRunningPtr->store(false, std::memory_order_release);
     delete p;
-    vTaskDelete(nullptr);
+}
+
+bool DiscordNotifier::_enqueue(TaskParam* message, bool highPriority) {
+    if (!message) return false;
+    QueueHandle_t queue = highPriority ? _highQueue : _lowQueue;
+    if (!queue || !_workerReady.load(std::memory_order_acquire)) {
+        _droppedCount++;
+        delete message;
+        return false;
+    }
+
+    if (!highPriority) {
+        TaskParam* replaced = nullptr;
+        if (xQueueReceive(queue, &replaced, 0) == pdTRUE) delete replaced;
+    }
+
+    if (xQueueSend(queue, &message, 0) == pdTRUE) return true;
+    _droppedCount++;
+    Serial.println(highPriority
+        ? "[Discord] priority queue full, event dropped"
+        : "[Discord] online event dropped");
+    delete message;
+    return false;
+}
+
+void DiscordNotifier::_workerTask(void* param) {
+    static_cast<DiscordNotifier*>(param)->_workerLoop();
+}
+
+void DiscordNotifier::_workerLoop() {
+    TaskParam* message = nullptr;
+    for (;;) {
+        if (xQueueReceive(_highQueue, &message, pdMS_TO_TICKS(50)) == pdTRUE ||
+            xQueueReceive(_lowQueue, &message, 0) == pdTRUE) {
+            _send(message);
+            message = nullptr;
+        }
+    }
 }

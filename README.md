@@ -46,7 +46,8 @@ OLED status:
 - **OLED display** — 2-page rotating status display with auto-sleep
 - **Configurable reminders** — interval-based buzzer reminder when no drink detected
 - **Captive config portal** — WiFi setup at `192.168.4.1` on first boot (no app needed)
-- **Non-blocking design** — all timing via `millis()`; no `delay()` in main loop
+- **FreeRTOS control isolation** — scale/detection/reminder/display run in one high-priority control task; Web, MQTT and Discord cannot stall sampling
+- **Non-blocking tare and workers** — tare is sample-driven; Discord, MQTT and drink logging use persistent/background workers
 
 ---
 
@@ -94,21 +95,15 @@ See [docs/guides/getting-started.md](docs/guides/getting-started.md) for the com
 ## Architecture Overview
 
 ```
-┌─────────────────── Normal Mode ──────────────────────┐
-│  ScaleManager (HX711 + moving avg)                   │
-│       │                                              │
-│  DrinkDetector (6-state machine)                     │
-│       ├─→ EventLogger  (JSONL /logs/)                │
-│       ├─→ DiscordNotifier  (async HTTPS Webhook)     │
-│       ├─→ ReminderManager  (millis interval)         │
-│       ├─→ BuzzerController (LEDC PWM queue)          │
-│       └─→ AppState  (shared runtime state)           │
-│                                                      │
-│  DashboardServer  (HTTP API + static assets)         │
-│  DisplayManager   (SSD1306 OLED pages)               │
-│  TimeManager      (NTP sync)                         │
-│  DailySummaryManager (midnight Discord summary)      │
-└──────────────────────────────────────────────────────┘
+┌─────────────────── Normal Mode ───────────────────────┐
+│  TaskControl (Core 1, 10 ms)                          │
+│  ├─ ScaleManager → DrinkDetector                      │
+│  ├─ Reminder / Buzzer / Display / Time                │
+│  └─ RuntimeSnapshot + ControlCommand Queue             │
+│                                                       │
+│  loopTask → Dashboard / ConfigPortal / health         │
+│  workers  → Discord / MQTT / Log / counter NVS        │
+└───────────────────────────────────────────────────────┘
 
 ┌────── AP Mode (no WiFi configured) ──────────────────┐
 │  ConfigPortal  (HTTP at 192.168.4.1)                 │

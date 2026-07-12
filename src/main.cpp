@@ -17,6 +17,7 @@ static fs::LittleFSFS LogFS;
 #include "EventLogger.h"
 #include "MqttPublisher.h"
 #include "ReminderManager.h"
+#include "RuntimeCoordinator.h"
 #include "ScaleManager.h"
 #include "TimeManager.h"
 #include "WiFiManager.h"
@@ -42,6 +43,180 @@ static DiscordNotifier     discordNotifier;
 static EventLogger         eventLogger;
 static DailySummaryManager dailySummaryManager;
 static MqttPublisher       mqttPublisher;
+static RuntimeCoordinator  runtimeCoordinator;
+static TaskHandle_t        s_controlTaskHandle = nullptr;
+static uint32_t            s_controlHeartbeat = 0;
+static uint32_t            s_dailyGoalMl = DEFAULT_DAILY_GOAL_ML;
+static uint32_t            s_pendingTareRequestId = 0;
+
+static void replyControl(const ControlCommand& command, ControlResultStatus status) {
+    ControlResult result;
+    result.requestId = command.requestId;
+    result.status = status;
+    result.calibrationFactor = scaleManager.getCalibrationFactor();
+    result.tareOffset = scaleManager.getTareOffset();
+    result.weightGrams = scaleManager.getWeightGrams();
+    runtimeCoordinator.reply(result);
+}
+
+static void processControlCommands() {
+    ControlCommand command;
+    for (uint8_t i = 0; i < 4 && runtimeCoordinator.receive(command); i++) {
+        switch (command.type) {
+            case ControlCommandType::TARE:
+                if (s_pendingTareRequestId || scaleManager.isTareRunning()) {
+                    replyControl(command, ControlResultStatus::BUSY);
+                } else if (!scaleManager.isReady() || !scaleManager.isSamplesReady()) {
+                    replyControl(command, ControlResultStatus::NOT_READY);
+                } else if (scaleManager.startTare()) {
+                    s_pendingTareRequestId = command.requestId;
+                    reminderManager.resetTimer();
+                    buzzerController.stop();
+                } else {
+                    replyControl(command, ControlResultStatus::FAILED);
+                }
+                break;
+
+            case ControlCommandType::CALIBRATE:
+                if (scaleManager.isTareRunning()) {
+                    replyControl(command, ControlResultStatus::BUSY);
+                } else if (!scaleManager.isReady() || !scaleManager.isSamplesReady()) {
+                    replyControl(command, ControlResultStatus::NOT_READY);
+                } else if (command.floatValue <= 0.0f ||
+                           scaleManager.getRawAverage() == scaleManager.getTareOffset()) {
+                    replyControl(command, ControlResultStatus::FAILED);
+                } else {
+                    scaleManager.calibrateWithKnownWeight(command.floatValue);
+                    replyControl(command, ControlResultStatus::OK);
+                }
+                break;
+
+            case ControlCommandType::SET_DAILY_GOAL_ML:
+                s_dailyGoalMl = command.uintValue;
+                mqttPublisher.setDailyGoal(command.uintValue);
+                replyControl(command, ControlResultStatus::OK);
+                break;
+            case ControlCommandType::SET_REMINDER_ENABLED:
+                reminderManager.setEnabled(command.boolValue);
+                replyControl(command, ControlResultStatus::OK);
+                break;
+            case ControlCommandType::SET_REMINDER_INTERVAL_MIN:
+                reminderManager.setIntervalMin(command.uintValue);
+                replyControl(command, ControlResultStatus::OK);
+                break;
+            case ControlCommandType::SET_REMINDER_ALERT_TIMEOUT_SEC:
+                reminderManager.setAlertTimeoutSec(command.uintValue);
+                replyControl(command, ControlResultStatus::OK);
+                break;
+            case ControlCommandType::SET_BUZZER_ENABLED:
+                buzzerController.setEnabled(command.boolValue);
+                replyControl(command, ControlResultStatus::OK);
+                break;
+            case ControlCommandType::SET_BUZZER_FREQUENCY_HZ:
+                buzzerController.setFrequency(command.uintValue);
+                replyControl(command, ControlResultStatus::OK);
+                break;
+            case ControlCommandType::SET_BUZZER_DURATION_MS:
+                buzzerController.setDuration(command.uintValue);
+                replyControl(command, ControlResultStatus::OK);
+                break;
+            case ControlCommandType::SET_BUZZER_VOLUME_PERCENT:
+                buzzerController.setVolume((uint8_t)command.uintValue);
+                replyControl(command, ControlResultStatus::OK);
+                break;
+        }
+    }
+}
+
+static void runControlIteration() {
+    processControlCommands();
+    buzzerController.update();
+    scaleManager.update();
+    timeManager.update();
+
+    long tareOffset;
+    if (scaleManager.takeTareResult(tareOffset) && s_pendingTareRequestId) {
+        drinkDetector.resetScaleBaseline();
+        ControlResult result;
+        result.requestId = s_pendingTareRequestId;
+        result.status = ControlResultStatus::OK;
+        result.calibrationFactor = scaleManager.getCalibrationFactor();
+        result.tareOffset = tareOffset;
+        result.weightGrams = scaleManager.getWeightGrams();
+        runtimeCoordinator.reply(result);
+        s_pendingTareRequestId = 0;
+    } else if (scaleManager.takeTareFailure() && s_pendingTareRequestId) {
+        ControlResult result;
+        result.requestId = s_pendingTareRequestId;
+        result.status = ControlResultStatus::FAILED;
+        result.calibrationFactor = scaleManager.getCalibrationFactor();
+        result.tareOffset = scaleManager.getTareOffset();
+        result.weightGrams = scaleManager.getWeightGrams();
+        runtimeCoordinator.reply(result);
+        s_pendingTareRequestId = 0;
+    }
+
+    const bool persistenceWasInitialized = drinkDetector.isPersistenceInitialized();
+    if (persistenceWasInitialized) dailySummaryManager.update();
+    if (!scaleManager.isTareRunning()) drinkDetector.update();
+    if (!persistenceWasInitialized && drinkDetector.isPersistenceInitialized())
+        dailySummaryManager.update();
+    reminderManager.update();
+
+    appState.weightGrams = scaleManager.getWeightGrams();
+    appState.nextReminderSec = reminderManager.getNextReminderSec();
+    appState.ntpSynced = timeManager.isSynced();
+
+    if (appState.mode == AppMode::NORMAL) {
+        const CupState currentCupState = drinkDetector.getCupState();
+        if (currentCupState != s_prevCupState) {
+            if (currentCupState == CupState::NO_CUP || s_prevCupState == CupState::NO_CUP)
+                displayManager.wake();
+            s_prevCupState = currentCupState;
+        }
+        if (appState.nextReminderSec == 0 && s_prevReminderSec > 0) displayManager.wake();
+        s_prevReminderSec = appState.nextReminderSec;
+
+        const RuntimeSnapshot connectivity = runtimeCoordinator.snapshot();
+        displayManager.showNormalMode(
+            appState.weightGrams, scaleManager.isStable(),
+            appState.todayTotalMl, s_dailyGoalMl, appState.drinkCountToday,
+            appState.lastDrinkMl, appState.nextReminderSec,
+            connectivity.wifiConnected, connectivity.ipAddress, appState.ntpSynced);
+    }
+    displayManager.update();
+
+    RuntimeSnapshot snapshot;
+    snapshot.controlHeartbeat = ++s_controlHeartbeat;
+    snapshot.mode = appState.mode;
+    snapshot.fsOk = appState.fsOk;
+    snapshot.logFsOk = appState.logFsOk;
+    snapshot.oledOk = appState.oledOk;
+    snapshot.hx711Ok = appState.hx711Ok;
+    snapshot.buzzerOk = appState.buzzerOk;
+    snapshot.ntpSynced = appState.ntpSynced;
+    snapshot.scaleStable = scaleManager.isStable();
+    snapshot.scaleSamplesReady = scaleManager.isSamplesReady();
+    snapshot.tareRunning = scaleManager.isTareRunning();
+    snapshot.weightGrams = appState.weightGrams;
+    snapshot.todayTotalMl = appState.todayTotalMl;
+    snapshot.lastDrinkMl = appState.lastDrinkMl;
+    snapshot.calibrationFactor = scaleManager.getCalibrationFactor();
+    snapshot.tareOffset = scaleManager.getTareOffset();
+    snapshot.cupState = appState.cupState;
+    snapshot.drinkCountToday = appState.drinkCountToday;
+    snapshot.nextReminderSec = appState.nextReminderSec;
+    runtimeCoordinator.publishControl(snapshot);
+}
+
+static void controlTask(void*) {
+    runtimeCoordinator.setControlRunning(true);
+    TickType_t lastWake = xTaskGetTickCount();
+    for (;;) {
+        runControlIteration();
+        vTaskDelayUntil(&lastWake, pdMS_TO_TICKS(10));
+    }
+}
 
 static void initFilesystem() {
     if (LittleFS.begin(false, "/webfs", 5, "webfs")) {
@@ -75,6 +250,8 @@ void setup() {
     initFilesystem();
     initLogFilesystem();
     configManager.load(appConfig);
+    s_dailyGoalMl = appConfig.dailyGoalMl;
+    const bool runtimeReady = runtimeCoordinator.begin();
 
     Wire.begin(PIN_OLED_SDA, PIN_OLED_SCL);
 
@@ -86,7 +263,6 @@ void setup() {
         Serial.println("[WARN] OLED init failed");
     }
 
-    scaleManager.setConfigManager(&configManager);
     scaleManager.init(appConfig.calibrationFactor, appConfig.tareOffset,
                       appConfig.stableToleranceGram, appConfig.stableDurationMs);
     appState.hx711Ok = scaleManager.isReady();
@@ -121,11 +297,8 @@ void setup() {
         appState.mode          = AppMode::NORMAL;
         appState.wifiConnected = true;
         appState.ipAddress     = wifiManager.getIP();
-        dashboardServer.begin(scaleManager, configManager, appState, appConfig,
-                              buzzerController, reminderManager, LogFS);
         if (appConfig.ntpEnabled) timeManager.init(appConfig);
         discordNotifier.init(appState, appConfig);
-        discordNotifier.notifyOnline(appState.ipAddress);
         if (appConfig.mqttEnabled) mqttPublisher.init(appState, appConfig);
         eventLogger.init(appState.logFsOk, LogFS);
         drinkDetector.setTimeManager(&timeManager);
@@ -134,6 +307,11 @@ void setup() {
         drinkDetector.setMqttPublisher(&mqttPublisher);
         mqttPublisher.setTimeManager(&timeManager);
         dailySummaryManager.init(discordNotifier, drinkDetector, timeManager, appConfig);
+        dashboardServer.begin(scaleManager, configManager, appState, appConfig,
+                              buzzerController, reminderManager, LogFS,
+                              runtimeCoordinator, eventLogger, discordNotifier);
+        runtimeCoordinator.publishConnectivity(true, appState.ipAddress);
+        discordNotifier.notifyOnline(appState.ipAddress);
         Serial.printf("[INFO] Normal Mode  IP: %s\n", appState.ipAddress.c_str());
         displayManager.sleep();
         s_prevCupState    = drinkDetector.getCupState();
@@ -142,6 +320,7 @@ void setup() {
         const bool apOk = wifiManager.startAP(appConfig.apSsid, appConfig.apPassword);
         appState.mode      = AppMode::AP_MODE;
         appState.ipAddress = wifiManager.getAPIP();
+        runtimeCoordinator.publishConnectivity(false, appState.ipAddress);
         if (apOk) {
             configPortal.begin(configManager, appState);
             displayManager.showAPMode(appConfig.apSsid, appConfig.apPassword, appState.ipAddress);
@@ -162,49 +341,52 @@ void setup() {
         buzzerController.play(BeepPattern::AP_MODE);
     }
 
+    if (runtimeReady &&
+        xTaskCreatePinnedToCore(controlTask, "hydracup_control", 8192, nullptr, 3,
+                                &s_controlTaskHandle, ARDUINO_RUNNING_CORE) != pdPASS) {
+        Serial.println("[ERROR] RTOS control task creation failed; degraded loop control active (tare/calibrate unavailable)");
+        s_controlTaskHandle = nullptr;
+    }
+
     Serial.println("[INFO] Boot complete");
 }
 
 void loop() {
-    buzzerController.update();
-    scaleManager.update();
-    drinkDetector.update();
-    reminderManager.update();
-
-    appState.weightGrams     = scaleManager.getWeightGrams();
-    appState.nextReminderSec = reminderManager.getNextReminderSec();
+    if (!runtimeCoordinator.isControlRunning()) runControlIteration();
 
     if (appState.mode == AppMode::NORMAL) {
-        // Wake display on cup pick-up/put-down or reminder fire
-        {
-            const CupState curCupState = drinkDetector.getCupState();
-            if (curCupState != s_prevCupState) {
-                if (curCupState == CupState::NO_CUP || s_prevCupState == CupState::NO_CUP)
-                    displayManager.wake();
-                s_prevCupState = curCupState;
-            }
-            if (appState.nextReminderSec == 0 && s_prevReminderSec > 0)
-                displayManager.wake();
-            s_prevReminderSec = appState.nextReminderSec;
-        }
-
         wifiManager.loop();
         dashboardServer.loop();
-        appState.wifiConnected = wifiManager.isConnected();
-        timeManager.update();
-        appState.ntpSynced = timeManager.isSynced();
+        static bool lastWifiConnected = true;
+        static uint32_t lastConnectivityMs = 0;
+        const bool wifiConnected = wifiManager.isConnected();
+        if (wifiConnected != lastWifiConnected || millis() - lastConnectivityMs >= 1000) {
+            lastWifiConnected = wifiConnected;
+            lastConnectivityMs = millis();
+            runtimeCoordinator.publishConnectivity(wifiConnected, appState.ipAddress);
+        }
         discordNotifier.update();
-        mqttPublisher.loop();
-        dailySummaryManager.update();
-
-        displayManager.showNormalMode(
-            appState.weightGrams,    scaleManager.isStable(),
-            appState.todayTotalMl,   appConfig.dailyGoalMl,   appState.drinkCountToday,
-            appState.lastDrinkMl,    appState.nextReminderSec,
-            appState.wifiConnected,  appState.ipAddress,       appState.ntpSynced);
+        const RuntimeSnapshot snapshot = runtimeCoordinator.snapshot();
+        mqttPublisher.loop(snapshot.todayTotalMl);
     } else {
         configPortal.loop();
     }
 
-    displayManager.update();
+    static uint32_t lastHealthMs = 0;
+    if (millis() - lastHealthMs >= 30000) {
+        lastHealthMs = millis();
+        const RuntimeSnapshot snapshot = runtimeCoordinator.snapshot();
+        const UBaseType_t stackMargin = s_controlTaskHandle
+            ? uxTaskGetStackHighWaterMark(s_controlTaskHandle) : 0;
+        Serial.printf("[RTOS] heartbeat=%lu stack_free=%u heap=%u min_heap=%u cmd_drop=%lu result_drop=%lu\n",
+                      (unsigned long)snapshot.controlHeartbeat,
+                      (unsigned)stackMargin,
+                      (unsigned)ESP.getFreeHeap(),
+                      (unsigned)ESP.getMinFreeHeap(),
+                      (unsigned long)snapshot.commandDrops,
+                      (unsigned long)snapshot.resultDrops);
+        if (runtimeCoordinator.isControlRunning() && !runtimeCoordinator.isControlHealthy())
+            Serial.println("[RTOS][ERROR] control task heartbeat stalled");
+    }
+    vTaskDelay(pdMS_TO_TICKS(1));
 }

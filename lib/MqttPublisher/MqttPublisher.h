@@ -5,6 +5,7 @@
 #include <freertos/FreeRTOS.h>
 #include <freertos/queue.h>
 #include <freertos/task.h>
+#include <atomic>
 #include "AppState.h"
 #include "app_types.h"
 
@@ -14,8 +15,9 @@ class MqttPublisher {
 public:
     void init(AppState& state, const AppConfig& cfg);
     void setTimeManager(TimeManager* tm) { _time = tm; }
+    void setDailyGoal(uint32_t dailyGoalMl) { _dailyGoalMl.store(dailyGoalMl); }
 
-    void loop();                                              // main thread; heartbeat timing + enqueue
+    void loop(float todayTotalMl);                            // web task; heartbeat timing + enqueue
     void publishStatus(float currentMl, const char* event);   // main thread; build payload + enqueue
 
 private:
@@ -29,7 +31,6 @@ private:
     bool _connect();    // background task only
 
     AppState*         _state = nullptr;
-    const AppConfig*  _cfg   = nullptr;   // main thread only; read for dailyGoalMl/mqttHeartbeatSec
     TimeManager*       _time = nullptr;   // main thread only; read for device_time
 
     WiFiClient    _wifiClient;   // background task only
@@ -40,6 +41,8 @@ private:
 
     bool     _enabled       = false;
     uint32_t _lastPublishMs = 0;   // main thread only; heartbeat timing
+    std::atomic<uint32_t> _dailyGoalMl{2000};
+    uint16_t _heartbeatSec = 60;
 
     // Copied out of AppConfig in init() before the background task starts;
     // the task only ever reads these local copies, never AppConfig/String directly.

@@ -17,6 +17,15 @@ DrinkCounterLoadStatus DrinkDetectorEventHandler::restore(const char* currentPer
         _persistence ? _persistence->load(currentPeriod, snapshot)
                      : DrinkCounterLoadStatus::EMPTY;
 
+    return applyRestore(status, snapshot, currentPeriod);
+}
+
+DrinkCounterLoadStatus DrinkDetectorEventHandler::applyRestore(
+        DrinkCounterLoadStatus status, const DrinkCounterSnapshot& snapshot,
+        const char* currentPeriod) {
+
+    if (status == DrinkCounterLoadStatus::LOAD_FAILED) return status;
+
     std::strncpy(_restoredPeriod, snapshot.period, sizeof(_restoredPeriod) - 1);
     _restoredPeriod[sizeof(_restoredPeriod) - 1] = '\0';
     if (status == DrinkCounterLoadStatus::CURRENT_PERIOD ||
@@ -63,6 +72,27 @@ void DrinkDetectorEventHandler::resetDailyCounters(const char* period) {
     _lastDrinkMl = 0.0f;
     _drinkCount = 0;
     if (period) _save(period);
+}
+
+DrinkCounterSnapshot DrinkDetectorEventHandler::snapshot(const char* period) const {
+    DrinkCounterSnapshot result;
+    if (period) {
+        std::strncpy(result.period, period, sizeof(result.period) - 1);
+        result.period[sizeof(result.period) - 1] = '\0';
+    }
+    result.totalMl = _todayTotalMl;
+    result.lastDrinkMl = _lastDrinkMl;
+    result.drinkCount = _drinkCount;
+    return result;
+}
+
+void DrinkDetectorEventHandler::mergeSnapshot(const DrinkCounterSnapshot& incoming,
+                                              const char* period) {
+    if (incoming.drinkCount == 0 && incoming.totalMl == 0.0f) return;
+    _todayTotalMl += incoming.totalMl;
+    _drinkCount += incoming.drinkCount;
+    if (incoming.lastDrinkMl > 0.0f) _lastDrinkMl = incoming.lastDrinkMl;
+    _save(period);
 }
 
 void DrinkDetectorEventHandler::_save(const char* period) {

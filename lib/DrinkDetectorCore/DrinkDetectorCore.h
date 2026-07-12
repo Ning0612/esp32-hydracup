@@ -32,6 +32,7 @@ struct DrinkCounterSnapshot {
 };
 
 enum class DrinkCounterLoadStatus : uint8_t {
+    LOAD_FAILED,
     EMPTY,
     CURRENT_PERIOD,
     PREVIOUS_PERIOD
@@ -44,6 +45,7 @@ public:
                                         DrinkCounterSnapshot& snapshot) = 0;
     virtual void save(const char* currentPeriod,
                       const DrinkCounterSnapshot& snapshot) = 0;
+    virtual bool isIdle() const { return true; }
 };
 
 class DrinkDetectorEffects {
@@ -63,10 +65,15 @@ public:
     void init(DrinkCounterPersistence* persistence, DrinkDetectorEffects* effects);
     void setPersistence(DrinkCounterPersistence* persistence) { _persistence = persistence; }
     DrinkCounterLoadStatus restore(const char* currentPeriod);
+    DrinkCounterLoadStatus applyRestore(DrinkCounterLoadStatus status,
+                                        const DrinkCounterSnapshot& snapshot,
+                                        const char* currentPeriod);
     void save(const char* currentPeriod);
     void onDrinkConfirmed(float amountMl, const char* period, const char* timestamp);
     void onRefillDetected(float amountMl);
     void resetDailyCounters(const char* period);
+    DrinkCounterSnapshot snapshot(const char* period = nullptr) const;
+    void mergeSnapshot(const DrinkCounterSnapshot& snapshot, const char* period);
 
     float getTodayTotalMl() const { return _todayTotalMl; }
     float getLastDrinkMl() const { return _lastDrinkMl; }

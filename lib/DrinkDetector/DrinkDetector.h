@@ -7,6 +7,7 @@
 #include "ReminderManager.h"
 #include "BuzzerController.h"
 #include "DrinkDetectorCore.h"
+#include <atomic>
 
 class DiscordNotifier;
 class EventLogger;
@@ -19,6 +20,14 @@ public:
     void init(ScaleManager& scale, AppState& state, const AppConfig& cfg,
               ReminderManager& reminder, BuzzerController& buzzer);
     void update();
+    void resetScaleBaseline();
+    bool isPersistenceIdle() const;
+    bool isPersistenceReady() const { return _restoreState.load() != RestoreState::LOADING; }
+    bool isPersistenceInitialized() const { return _nvsDone; }
+    bool hasPreviousPeriodCounters() const {
+        return _nvsDone && _restoreStatus == DrinkCounterLoadStatus::PREVIOUS_PERIOD;
+    }
+    const char* getRestoredPeriod() const { return _events.getRestoredPeriod(); }
 
     void setDiscordNotifier(DiscordNotifier* dn) { _discord  = dn; }
     void setEventLogger(EventLogger* el)         { _eventLog = el; }
@@ -45,6 +54,7 @@ private:
     void publishStatus(float totalMl, const char* event) override;
 
     DrinkDetectorCore _core;
+    DrinkDetectorConfig _coreConfig;
     DrinkDetectorEventHandler _events;
     ScaleManager*     _scale      = nullptr;
     AppState*         _state      = nullptr;
@@ -59,8 +69,20 @@ private:
 
     bool     _nvsDone               = false;
 
+    enum class RestoreState : uint8_t { IDLE, LOADING, READY, FAILED };
+    std::atomic<RestoreState> _restoreState{RestoreState::IDLE};
+    DrinkCounterLoadStatus _restoreStatus = DrinkCounterLoadStatus::EMPTY;
+    DrinkCounterSnapshot _restoreSnapshot;
+    DrinkCounterSnapshot _preRestoreSnapshot;
+    DrinkCounterSnapshot _deferredCurrentSnapshot;
+    char _restorePeriod[16] = {};
+    TaskHandle_t _restoreTask = nullptr;
+    uint32_t _restoreRetryAtMs = 0;
+
     void _syncCupState();
-    void _nvsRestore();
+    void _startNvsRestore();
+    void _finishNvsRestore();
+    static void _restoreTaskFunc(void* param);
 
     static const char* _cupStateName(CupState s);
 };

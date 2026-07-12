@@ -3,6 +3,7 @@
 #include "DrinkDetector.h"
 #include "TimeManager.h"
 #include "app_types.h"
+#include "StorageLock.h"
 
 void DailySummaryManager::init(DiscordNotifier& discord, DrinkDetector& detector,
                                 TimeManager& time, const AppConfig& cfg) {
@@ -12,21 +13,44 @@ void DailySummaryManager::init(DiscordNotifier& discord, DrinkDetector& detector
     _cfg      = &cfg;
 
     Preferences prefs;
-    prefs.begin("daily_sum", false);
-    _lastSettledKey = prefs.getString("settled", "");
-    prefs.end();
+    if (lockNvs()) {
+        prefs.begin("daily_sum", false);
+        _lastSettledKey = prefs.getString("settled", "");
+        prefs.end();
+        unlockNvs();
+    }
+
+    _markerQueue = xQueueCreate(1, 16);
+    if (!_markerQueue || xTaskCreate(_markerTaskFunc, "storage_daily", 2304,
+                                     this, 1, &_markerTask) != pdPASS) {
+        Serial.println("[DailySummary] marker worker unavailable");
+        _markerQueue = nullptr;
+    }
+
 }
 
 void DailySummaryManager::update() {
     if (!_discord || !_detector || !_time || !_cfg) return;
     if (!_time->isSynced()) return;
+    if (!_detector->isPersistenceReady()) return;
+
+    if (_stage != SettlementStage::IDLE) {
+        _progressSettlement();
+        return;
+    }
 
     struct tm now;
     if (!_time->getLocalTm(now)) return;
 
-    if (now.tm_hour != 0) return;
-
     const String today = _time->getDateString();
+    if (_detector->hasPreviousPeriodCounters()) {
+        String summaryDate = _detector->getRestoredPeriod();
+        summaryDate.replace('-', '/');
+        _beginSettlement(summaryDate, today);
+        return;
+    }
+
+    if (now.tm_hour != 0) return;
     if (_lastSettledKey == today) return;
 
     _fire(now);
@@ -42,23 +66,76 @@ void DailySummaryManager::_fire(const struct tm& now) {
     char dateStr[12];
     strftime(dateStr, sizeof(dateStr), "%Y/%m/%d", &yesterday);
 
-    const float    totalMl    = _detector->getTodayTotalMl();
-    const uint32_t drinkCount = _detector->getDrinkCountToday();
+    _beginSettlement(String(dateStr), _time->getDateString());
+}
 
-    Serial.printf("[DailySummary] 00:00 settlement  total=%.0f ml  count=%u\n",
-                  totalMl, (unsigned)drinkCount);
+void DailySummaryManager::_beginSettlement(const String& summaryDate,
+                                           const String& settledKey) {
+    if (!_markerQueue) {
+        static bool warned = false;
+        if (!warned) {
+            Serial.println("[DailySummary] settlement deferred: marker worker unavailable");
+            warned = true;
+        }
+        return;
+    }
+    _pendingTotalMl = _detector->getTodayTotalMl();
+    _pendingDrinkCount = _detector->getDrinkCountToday();
+    _pendingSummaryDate = summaryDate;
+    _pendingSettledKey = settledKey;
+    Serial.printf("[DailySummary] settlement %s  total=%.0f ml  count=%u\n",
+                  summaryDate.c_str(), _pendingTotalMl, (unsigned)_pendingDrinkCount);
 
-    // Settle before sending so a reboot cannot re-run settlement and duplicate the summary.
     _detector->resetDailyCounters();
+    _stage = SettlementStage::WAIT_COUNTER;
+}
 
-    _lastSettledKey = _time->getDateString();
-    Preferences prefs;
-    prefs.begin("daily_sum", false);
-    prefs.putString("settled", _lastSettledKey);
-    prefs.end();
+void DailySummaryManager::_progressSettlement() {
+    if (_stage == SettlementStage::WAIT_COUNTER) {
+        if (!_detector->isPersistenceIdle() || !_markerQueue) return;
+        char settled[16] = {};
+        strncpy(settled, _pendingSettledKey.c_str(), sizeof(settled) - 1);
+        _markerDone.store(false, std::memory_order_release);
+        _markerOk.store(false, std::memory_order_release);
+        if (xQueueOverwrite(_markerQueue, settled) == pdTRUE)
+            _stage = SettlementStage::WAIT_MARKER;
+        return;
+    }
 
-    const bool notified = _discord->notifyDailySummary(totalMl, drinkCount, String(dateStr));
-    if (!notified) {
+    if (_stage != SettlementStage::WAIT_MARKER ||
+        !_markerDone.load(std::memory_order_acquire)) return;
+    if (!_markerOk.load(std::memory_order_acquire)) {
+        Serial.println("[DailySummary] settled marker write failed; retrying");
+        _stage = SettlementStage::WAIT_COUNTER;
+        return;
+    }
+
+    _lastSettledKey = _pendingSettledKey;
+    const bool notified = _discord->notifyDailySummary(
+        _pendingTotalMl, _pendingDrinkCount, _pendingSummaryDate);
+    if (!notified)
         Serial.println("[DailySummary] Notification skipped (WiFi/webhook); counters reset anyway");
+    _stage = SettlementStage::IDLE;
+}
+
+void DailySummaryManager::_markerTaskFunc(void* param) {
+    static_cast<DailySummaryManager*>(param)->_markerTaskLoop();
+}
+
+void DailySummaryManager::_markerTaskLoop() {
+    char settled[16];
+    for (;;) {
+        if (xQueueReceive(_markerQueue, settled, portMAX_DELAY) != pdTRUE) continue;
+        bool ok = false;
+        if (lockNvs()) {
+            Preferences prefs;
+            if (prefs.begin("daily_sum", false)) {
+                ok = prefs.putString("settled", settled) == strlen(settled);
+                prefs.end();
+            }
+            unlockNvs();
+        }
+        _markerOk.store(ok, std::memory_order_release);
+        _markerDone.store(true, std::memory_order_release);
     }
 }
