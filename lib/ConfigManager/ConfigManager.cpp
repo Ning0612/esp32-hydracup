@@ -52,9 +52,12 @@ void ConfigManager::load(AppConfig& cfg) {
     unlockNvs();
 }
 
-void ConfigManager::save(const AppConfig& cfg) {
-    if (!lockNvs()) return;
-    _prefs.begin(NVS_NAMESPACE, false);  // read-write
+bool ConfigManager::save(const AppConfig& cfg) {
+    if (!lockNvs()) return false;
+    if (!_prefs.begin(NVS_NAMESPACE, false)) {  // read-write
+        unlockNvs();
+        return false;
+    }
 
     _prefs.putString("wifi_ssid",    cfg.wifiSsid);
     _prefs.putString("wifi_pass",    cfg.wifiPassword);
@@ -95,10 +98,11 @@ void ConfigManager::save(const AppConfig& cfg) {
 
     _prefs.putString("ap_ssid",      cfg.apSsid);
     _prefs.putString("ap_pass",      cfg.apPassword);
-    _prefs.putString("admin_hash",   cfg.adminPasswordHash);
+    const size_t adminHashBytes = _prefs.putString("admin_hash", cfg.adminPasswordHash);
 
     _prefs.end();
     unlockNvs();
+    return adminHashBytes == cfg.adminPasswordHash.length();
 }
 
 bool ConfigManager::saveCalibration(float factor, long offset) {

@@ -27,8 +27,9 @@ weightGrams = (rawADC - tareOffset) / calibrationFactor
 4. 確認頁面顯示「Tare OK」且重量顯示接近 0
 
 ```bash
-# 或使用 curl 直接呼叫 API
-curl -X POST http://192.168.1.100/api/tare
+# 或使用 curl（需先登入並取得 session cookie／CSRF token）
+curl -b cookies.txt -H "X-CSRF-Token: <session-csrf-token>" \
+  -X POST http://192.168.1.100/api/tare
 ```
 
 ---
@@ -42,8 +43,9 @@ curl -X POST http://192.168.1.100/api/tare
 5. 確認顯示的重量與已知重量一致（誤差 ±2 g 以內）
 
 ```bash
-# 或使用 curl
-curl -X POST -H "Content-Type: application/json" \
+# 或使用 curl（需先登入並取得 session cookie／CSRF token）
+curl -b cookies.txt -H "X-CSRF-Token: <session-csrf-token>" \
+  -X POST -H "Content-Type: application/json" \
   -d '{"known_weight_g": 200.0}' \
   http://192.168.1.100/api/calibrate
 # 回應：{"ok":true,"calibration_factor":427.53}

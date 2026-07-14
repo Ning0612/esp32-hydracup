@@ -3,138 +3,77 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>水杯追蹤器</title>
+<title>HydraCup / 儀表板</title>
+<script>
+(function () {
+  var key = 'iot-ui-theme', stored = null;
+  try { stored = localStorage.getItem(key); } catch (e) {}
+  var theme = (stored === 'light' || stored === 'dark') ? stored :
+    (matchMedia('(prefers-color-scheme:dark)').matches ? 'dark' : 'light');
+  document.documentElement.dataset.theme = theme;
+})();
+</script>
+<link rel="icon" type="image/svg+xml" href="/favicon.svg">
 <link rel="stylesheet" href="/style.css">
 </head>
 <body>
-<div class="container">
-  <div class="page-title">💧 水杯追蹤器</div>
+<header class="topbar"><div class="topbar-in">
+  <a class="brand" href="/"><span class="brand-mark">HC</span><span class="brand-copy">HYDRACUP<span class="brand-sub">LOCAL DEVICE / WATER TRACKER</span></span></a>
+  <div class="topbar-actions">
+    <nav class="nav" aria-label="主要導覽"><a class="active" aria-current="page" href="/">儀表板</a><a href="/history">歷史</a><a href="/settings">設定</a></nav>
+    <div class="theme-toggle" role="group" aria-label="色彩主題"><button type="button" data-theme-choice="light" aria-pressed="false">紙</button><button type="button" data-theme-choice="dark" aria-pressed="false">夜</button></div>
+    <button class="nav-logout" type="button" data-logout>登出</button>
+  </div>
+</div></header>
 
-  <!-- 即時重量 -->
-  <div class="card">
-    <div class="label">即時重量</div>
-    <div class="num-xl" id="wt">-- g</div>
-    <span class="state-chip" id="st">--</span>
+<main class="wrap">
+  <div class="intro"><div><div class="kicker">01 / dashboard</div><h1>今日飲水</h1></div><p>把每一次飲水變成可讀的日常節奏。HydraCup 會持續追蹤杯重、提醒與裝置狀態。</p></div>
+
+  <section class="status-banner" id="main-banner"><div><div class="status-label">LIVE SENSOR STATUS</div><div class="status-value" id="hero-state">等待資料</div></div><div class="updated">最後更新<br><strong id="updated-at">--:--:--</strong></div></section>
+  <div class="message" id="connection-msg" aria-live="polite"></div>
+
+  <div class="feature-grid">
+    <section class="card"><h2><span>01</span>杯重與杯況</h2><div class="label">即時重量</div><div class="num-xl" id="wt">-- g</div><span class="state-chip" id="st">等待資料</span><p class="info">數值每 2 秒更新一次；重量穩定後會判斷飲水事件。</p></section>
+    <section class="card"><h2><span>02</span>今日進度</h2><div class="label">今日飲水量</div><div class="num-xl"><span id="today">0</span><span style="font-size:.3em;letter-spacing:0"> ml</span></div><div class="progress-bg"><div class="progress-fill" id="bar" style="width:0%"></div></div><div class="sub" id="pct">0% / 目標 -- ml（0 次）</div></section>
   </div>
 
-  <!-- 今日飲水 -->
-  <div class="card">
-    <div class="label">今日飲水</div>
-    <div class="num-xl"><span id="today">0</span><span style="font-size:.45em;color:var(--text2);margin-left:6px">ml</span></div>
-    <div class="progress-bg"><div class="progress-fill" id="bar" style="width:0%"></div></div>
-    <div class="sub" id="pct">0% / 目標 -- ml（0 次）</div>
+  <div class="split-grid">
+    <section class="card"><h2><span>03</span>提醒節奏</h2><div class="metric-grid compact-grid"><div class="metric"><label>上次喝水</label><span id="last">--</span></div><div class="metric"><label>下次提醒</label><span id="next">--</span></div></div></section>
+    <section class="card"><h2><span>04</span>裝置狀態</h2>
+      <div class="status-row"><div class="dot" id="d-ntp"></div><span class="status-label">NTP 時間同步</span><span class="status-val" id="v-ntp">--</span></div>
+      <div class="status-row"><div class="dot" id="d-wh"></div><span class="status-label">Discord 通知</span><span class="status-val" id="v-wh">--</span></div>
+      <div class="status-row"><div class="dot" id="d-mq"></div><span class="status-label">MQTT 連線</span><span class="status-val" id="v-mq">--</span></div>
+      <div class="status-row"><div class="dot" id="d-hx"></div><span class="status-label">HX711 感測器</span><span class="status-val" id="v-hx">--</span></div>
+      <div class="status-row"><div class="dot" id="d-ol"></div><span class="status-label">OLED 顯示屏</span><span class="status-val" id="v-ol">--</span></div>
+    </section>
   </div>
+</main>
 
-  <!-- 提醒資訊 -->
-  <div class="card">
-    <div style="display:flex;justify-content:space-between;gap:16px">
-      <div style="flex:1">
-        <div class="label">上次喝水</div>
-        <div class="num-sm" id="last">--</div>
-      </div>
-      <div style="flex:1;text-align:right">
-        <div class="label">下次提醒</div>
-        <div class="num-sm" id="next" style="color:var(--success)">--</div>
-      </div>
-    </div>
-  </div>
+<footer class="site-footer"><div class="footer-in">
+  <div class="footer-repo"><span class="label">SOURCE</span><a href="https://github.com/Ning0612/esp32-hydracup">Ning0612/esp32-hydracup</a></div>
+  <div class="footer-meta">Vanilla HTML／CSS／JS · ESP32 local device · MIT License</div>
+</div></footer>
 
-  <!-- 系統狀態 -->
-  <div class="card">
-    <div class="label" style="margin-bottom:8px">系統狀態</div>
-    <div class="status-row">
-      <div class="dot" id="d-ntp"></div>
-      <span class="status-label">NTP 時間同步</span>
-      <span class="status-val" id="v-ntp">--</span>
-    </div>
-    <div class="status-row">
-      <div class="dot" id="d-wh"></div>
-      <span class="status-label">Discord 通知</span>
-      <span class="status-val" id="v-wh">--</span>
-    </div>
-    <div class="status-row">
-      <div class="dot" id="d-mq"></div>
-      <span class="status-label">MQTT 連線</span>
-      <span class="status-val" id="v-mq">--</span>
-    </div>
-    <div class="status-row">
-      <div class="dot" id="d-hx"></div>
-      <span class="status-label">HX711 感測器</span>
-      <span class="status-val" id="v-hx">--</span>
-    </div>
-    <div class="status-row">
-      <div class="dot" id="d-ol"></div>
-      <span class="status-label">OLED 顯示屏</span>
-      <span class="status-val" id="v-ol">--</span>
-    </div>
-  </div>
-</div>
-
-<nav>
-  <a href="/" class="active"><span class="ni">🏠</span>首頁</a>
-  <a href="/history"><span class="ni">📊</span>歷史</a>
-  <a href="/settings"><span class="ni">⚙️</span>設定</a>
-</nav>
-
+<script src="/ui.js"></script>
 <script>
-const STATE_NAMES = {
-  no_cup:          '無杯子',
-  unstable:        '不穩定',
-  stable:          '穩定',
-  possible_drink:  '正在喝',
-  drink_confirmed: '喝水完成',
-  refill_detected: '補水中'
-};
-
+const STATE_NAMES = { no_cup:'無杯子', unstable:'不穩定', stable:'穩定', possible_drink:'正在喝', drink_confirmed:'喝水完成', refill_detected:'補水中' };
 function setDot(id, cls) { document.getElementById(id).className = 'dot ' + (cls || ''); }
-function setVal(id, t)   { document.getElementById(id).textContent = t; }
-
+function setVal(id, t) { document.getElementById(id).textContent = t; }
 function update(d) {
-  setVal('wt', d.weight_g != null ? Math.round(d.weight_g) + ' g' : '-- g');
-  setVal('st', STATE_NAMES[d.cup_state_name] || d.cup_state_name || '--');
-
-  const t = d.today_total_ml || 0, g = d.daily_goal_ml || 2000;
-  const p = g > 0 ? Math.min(100, Math.round(t * 100 / g)) : 0;
-  setVal('today', Math.round(t));
-  const bar = document.getElementById('bar');
-  bar.style.width = p + '%';
-  bar.className = 'progress-fill' + (p >= 100 ? ' done' : '');
-  setVal('pct', p + '% / 目標 ' + g + ' ml（' + (d.drink_count_today || 0) + ' 次）');
-
-  setVal('last', d.last_drink_ml > 0 ? Math.round(d.last_drink_ml) + ' ml' : '--');
-  const s = d.next_reminder_sec || 0;
-  setVal('next', s > 0 ? (s >= 60 ? Math.floor(s / 60) + ' 分鐘後' : s + ' 秒後') : '現在提醒！');
-
-  setDot('d-ntp', d.ntp_synced ? 'ok' : 'warn');
-  setVal('v-ntp', d.ntp_synced ? '已同步' : '未同步');
-
-  if (!d.webhook_configured) {
-    setDot('d-wh', ''); setVal('v-wh', '未設定');
-  } else if (d.webhook_last_ok) {
-    setDot('d-wh', 'ok');  setVal('v-wh', '發送成功');
-  } else {
-    setDot('d-wh', 'warn'); setVal('v-wh', '發送失敗');
-  }
-
-  if (!d.mqtt_configured) {
-    setDot('d-mq', ''); setVal('v-mq', '未設定');
-  } else if (d.mqtt_connected) {
-    setDot('d-mq', 'ok');  setVal('v-mq', '已連線');
-  } else {
-    setDot('d-mq', 'warn'); setVal('v-mq', '未連線');
-  }
-
-  setDot('d-hx', d.hw_hx711 ? 'ok' : 'err');
-  setVal('v-hx', d.hw_hx711 ? '正常' : '異常');
-  setDot('d-ol', d.hw_oled ? 'ok' : 'warn');
-  setVal('v-ol', d.hw_oled ? '正常' : '異常');
+  const state = STATE_NAMES[d.cup_state_name] || d.cup_state_name || '等待資料';
+  const banner = document.getElementById('main-banner'); banner.className = 'status-banner' + (d.cup_state_name === 'no_cup' ? ' state-off' : '');
+  setVal('wt', d.weight_g != null ? Math.round(d.weight_g) + ' g' : '-- g'); setVal('st', state); setVal('hero-state', state);
+  const t = d.today_total_ml || 0, g = d.daily_goal_ml || 2000, p = g > 0 ? Math.min(100, Math.round(t * 100 / g)) : 0;
+  setVal('today', Math.round(t)); const bar = document.getElementById('bar'); bar.style.width = p + '%'; bar.className = 'progress-fill' + (p >= 100 ? ' done' : ''); setVal('pct', p + '% / 目標 ' + g + ' ml（' + (d.drink_count_today || 0) + ' 次）');
+  setVal('last', d.last_drink_ml > 0 ? Math.round(d.last_drink_ml) + ' ml' : '--'); const s = d.next_reminder_sec || 0; setVal('next', s > 0 ? (s >= 60 ? Math.floor(s / 60) + ' 分鐘後' : s + ' 秒後') : '現在提醒！');
+  setVal('updated-at', new Date().toLocaleTimeString('zh-TW', { hour12:false })); document.getElementById('connection-msg').style.display = 'none';
+  setDot('d-ntp', d.ntp_synced ? 'ok' : 'warn'); setVal('v-ntp', d.ntp_synced ? '已同步' : '未同步');
+  if (!d.webhook_configured) { setDot('d-wh', ''); setVal('v-wh', '未設定'); } else if (d.webhook_last_ok) { setDot('d-wh', 'ok'); setVal('v-wh', '發送成功'); } else { setDot('d-wh', 'warn'); setVal('v-wh', '發送失敗'); }
+  if (!d.mqtt_configured) { setDot('d-mq', ''); setVal('v-mq', '未設定'); } else if (d.mqtt_connected) { setDot('d-mq', 'ok'); setVal('v-mq', '已連線'); } else { setDot('d-mq', 'warn'); setVal('v-mq', '未連線'); }
+  setDot('d-hx', d.hw_hx711 ? 'ok' : 'err'); setVal('v-hx', d.hw_hx711 ? '正常' : '異常'); setDot('d-ol', d.hw_oled ? 'ok' : 'warn'); setVal('v-ol', d.hw_oled ? '正常' : '異常');
 }
-
-function poll() {
-  fetch('/api/status').then(r => r.json()).then(update).catch(() => {});
-}
-poll();
-setInterval(poll, 2000);
+function poll() { hydraFetch('/api/status').then(r => r.json()).then(update).catch(() => { const banner = document.getElementById('main-banner'); banner.className = 'status-banner state-off'; setVal('hero-state', '暫時離線'); const el = document.getElementById('connection-msg'); el.textContent = '暫時無法連線：正在重試…'; el.className = 'message error'; el.style.display = 'block'; }); }
+poll(); setInterval(poll, 2000);
 </script>
 </body>
 </html>

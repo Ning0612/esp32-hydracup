@@ -1,6 +1,12 @@
 # Configuration
 
-所有設定均可透過 `http://<ip>/settings` 頁面或 `POST /api/config` 修改，並持久化至 NVS。
+所有設定均可透過登入後的 `http://<ip>/settings` 頁面或帶有效 session／CSRF token 的
+`POST /api/config` 修改，並持久化至 NVS。首次進入 Normal Mode 時，`/login` 會要求設定
+至少 8 個字元的管理密碼；密碼只以 PBKDF2-HMAC-SHA256 雜湊儲存。
+
+Normal Mode 使用伺服器端單一 session slot：新登入會取代舊 session，閒置 30 分鐘或登入後
+24 小時自動失效；裝置重開機也會讓 session 失效。管理介面目前以 HTTP 提供，因此請將它
+限制在信任的隔離 LAN，避免同網段攻擊者攔截並重放 token。
 
 ---
 
@@ -103,8 +109,11 @@ Discord 通知類型：
 
 ## curl 批次設定範例
 
+以下假設已登入，`cookies.txt` 內有 `session` cookie，並已取得 session CSRF token。
+
 ```bash
-curl -X POST -H "Content-Type: application/json" \
+curl -b cookies.txt -H "X-CSRF-Token: <session-csrf-token>" \
+  -X POST -H "Content-Type: application/json" \
   -d '{
     "dailyGoalMl": 2500,
     "reminderEnabled": true,

@@ -45,7 +45,6 @@ void DailySummaryManager::update() {
     const String today = _time->getDateString();
     if (_detector->hasPreviousPeriodCounters()) {
         String summaryDate = _detector->getRestoredPeriod();
-        summaryDate.replace('-', '/');
         _beginSettlement(summaryDate, today);
         return;
     }
@@ -64,7 +63,7 @@ void DailySummaryManager::_fire(const struct tm& now) {
     struct tm yesterday;
     localtime_r(&t, &yesterday);
     char dateStr[12];
-    strftime(dateStr, sizeof(dateStr), "%Y/%m/%d", &yesterday);
+    strftime(dateStr, sizeof(dateStr), "%Y-%m-%d", &yesterday);
 
     _beginSettlement(String(dateStr), _time->getDateString());
 }

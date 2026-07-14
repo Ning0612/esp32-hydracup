@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>HydraCup / 登入</title>
+<script>
+(function () {
+  var key = 'iot-ui-theme', stored = null;
+  try { stored = localStorage.getItem(key); } catch (e) {}
+  var theme = (stored === 'light' || stored === 'dark') ? stored :
+    (matchMedia('(prefers-color-scheme:dark)').matches ? 'dark' : 'light');
+  document.documentElement.dataset.theme = theme;
+})();
+</script>
+<link rel="icon" type="image/svg+xml" href="/favicon.svg">
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<main class="login-wrap">
+  <div class="brand"><span class="brand-mark">HC</span><span class="brand-copy">HYDRACUP<span class="brand-sub">LOCAL DEVICE / WATER TRACKER</span></span></div>
+  <section class="card">
+    <div class="kicker">01 / access</div>
+    <h1 id="login-title">登入</h1>
+    <p class="section-note" id="login-note">輸入管理密碼以繼續操作裝置。</p>
+    <div class="message" id="login-msg" role="alert" aria-live="polite"></div>
+    <form class="login-form" id="login-form">
+      <div class="field">
+        <label for="password">管理密碼</label>
+        <input id="password" type="password" autocomplete="current-password" required>
+      </div>
+      <div class="field" id="confirm-field" style="display:none">
+        <label for="confirm">再次輸入管理密碼</label>
+        <input id="confirm" type="password" autocomplete="new-password">
+      </div>
+      <p class="hint" id="setup-hint" style="display:none">首次設定至少需要 8 個字元；密碼只儲存為雜湊值。</p>
+      <button type="submit" id="submit-btn">登入</button>
+    </form>
+  </section>
+  <div class="login-tools">
+    <div class="theme-toggle" role="group" aria-label="色彩主題">
+      <button type="button" data-theme-choice="light" aria-pressed="false">紙 Paper</button>
+      <button type="button" data-theme-choice="dark" aria-pressed="false">夜 Night</button>
+    </div>
+  </div>
+</main>
+
+<script src="/ui.js"></script>
+<script>
+var configured = true;
+var next = '/';
+try {
+  var requestedNext = new URLSearchParams(location.search).get('next') || '/';
+  var target = new URL(requestedNext, location.origin);
+  if (target.origin === location.origin)
+    next = target.pathname + target.search + target.hash;
+} catch (e) {}
+
+function setLoginMessage(text) {
+  var el = document.getElementById('login-msg');
+  el.textContent = text;
+  el.style.display = text ? 'block' : 'none';
+}
+
+function applyMode(data) {
+  configured = !!data.configured;
+  if (!configured) {
+    document.getElementById('login-title').textContent = '設定管理密碼';
+    document.getElementById('login-note').textContent = '先設定一組管理密碼，之後才能開啟 HydraCup WebUI。';
+    document.getElementById('confirm-field').style.display = '';
+    document.getElementById('setup-hint').style.display = '';
+    document.getElementById('password').autocomplete = 'new-password';
+    document.getElementById('submit-btn').textContent = '設定並登入';
+  }
+}
+
+window.hydraUiReady.then(function (data) {
+  if (data.authenticated) { location.replace('/'); return; }
+  applyMode(data);
+});
+
+document.getElementById('login-form').addEventListener('submit', function (event) {
+  event.preventDefault();
+  setLoginMessage('');
+  var password = document.getElementById('password').value;
+  var confirm = document.getElementById('confirm').value;
+  if (!password || (!configured && password.length < 8)) {
+    setLoginMessage(configured ? '請輸入管理密碼。' : '管理密碼至少需要 8 個字元。');
+    return;
+  }
+  if (!configured && password !== confirm) {
+    setLoginMessage('兩次輸入的管理密碼不一致。');
+    return;
+  }
+  var button = document.getElementById('submit-btn');
+  button.disabled = true;
+  button.textContent = configured ? '驗證中…' : '設定中…';
+  hydraFetch('/api/auth/login', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ password: password, confirm: confirm })
+  }).then(function (response) {
+    return response.json().then(function (data) {
+      if (!response.ok || !data.ok) {
+        setLoginMessage(response.status === 429 ? '嘗試次數過多，請稍後再試。' : (data.error || '登入失敗。'));
+        button.disabled = false;
+        button.textContent = configured ? '登入' : '設定並登入';
+        return;
+      }
+      location.replace(next);
+    });
+  }).catch(function () {
+    setLoginMessage('暫時無法連線，請稍後再試。');
+    button.disabled = false;
+    button.textContent = configured ? '登入' : '設定並登入';
+  });
+});
+</script>
+</body>
+</html>

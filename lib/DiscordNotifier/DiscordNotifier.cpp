@@ -3,6 +3,24 @@
 #include <WiFiClientSecure.h>
 #include <HTTPClient.h>
 
+// Discord's discord.com chain observed on 2026-07-14: WE1 -> GTS Root R4.
+// Official GTS Root R4 trust anchor; refresh when Discord rotates CAs.
+static const char DISCORD_ROOT_CA[] PROGMEM = R"EOF(
+-----BEGIN CERTIFICATE-----
+MIICCTCCAY6gAwIBAgINAgPlwGjvYxqccpBQUjAKBggqhkjOPQQDAzBHMQswCQYD
+VQQGEwJVUzEiMCAGA1UEChMZR29vZ2xlIFRydXN0IFNlcnZpY2VzIExMQzEUMBIG
+A1UEAxMLR1RTIFJvb3QgUjQwHhcNMTYwNjIyMDAwMDAwWhcNMzYwNjIyMDAwMDAw
+WjBHMQswCQYDVQQGEwJVUzEiMCAGA1UEChMZR29vZ2xlIFRydXN0IFNlcnZpY2Vz
+IExMQzEUMBIGA1UEAxMLR1RTIFJvb3QgUjQwdjAQBgcqhkjOPQIBBgUrgQQAIgNi
+AATzdHOnaItgrkO4NcWBMHtLSZ37wWHO5t5GvWvVYRg1rkDdc/eJkTBa6zzuhXyi
+QHY7qca4R9gq55KRanPpsXI5nymfopjTX15YhmUPoYRlBtHci8nHc8iMai/lxKvR
+HYqjQjBAMA4GA1UdDwEB/wQEAwIBhjAPBgNVHRMBAf8EBTADAQH/MB0GA1UdDgQW
+BBSATNbrdP9JNqPV2Py1PsVq8JQdjDAKBggqhkjOPQQDAwNpADBmAjEA6ED/g94D
+9J+uHXqnLrmvT/aDHQ4thQEd0dlq7A/Cr8deVl5c1RxYIigL9zC2L7F8AjEA8GE8
+p/SgguMh1YQdc4acLa/KNJvxn7kjNuK8YAOdgLOaVsjh4rsUecrNIdSUtUlD
+-----END CERTIFICATE-----
+)EOF";
+
 void DiscordNotifier::init(AppState& state, const AppConfig& cfg) {
     _state = &state;
     _configMutex = xSemaphoreCreateMutex();
@@ -63,7 +81,7 @@ void DiscordNotifier::notifyOnline(const String& ipAddress) {
     p->webhookUrl[sizeof(p->webhookUrl) - 1] = '\0';
 
     const int onlineWritten = snprintf(p->body, sizeof(p->body),
-             "{\"content\":\"[HydraCup] Online - http://%s\"}",
+             "{\"content\":\"✅ HydraCup 已上線\\nWebUI: http://%s\"}",
              ipAddress.c_str());
     if (onlineWritten >= (int)sizeof(p->body)) {
         Serial.println("[Discord] notifyOnline: body truncated");
@@ -73,6 +91,11 @@ void DiscordNotifier::notifyOnline(const String& ipAddress) {
 }
 
 void DiscordNotifier::notifyDrink(float amountMl, float totalMl, uint32_t drinkCount) {
+    (void)drinkCount;
+    if (_state && !_state->ntpSynced) {
+        Serial.println("[Discord] notifyDrink skipped: NTP time not synchronized");
+        return;
+    }
     char webhookUrl[512];
     uint32_t goalMl;
     if (!_copyConfig(webhookUrl, sizeof(webhookUrl), goalMl)) {
@@ -93,42 +116,9 @@ void DiscordNotifier::notifyDrink(float amountMl, float totalMl, uint32_t drinkC
     strncpy(p->webhookUrl, webhookUrl, sizeof(p->webhookUrl) - 1);
     p->webhookUrl[sizeof(p->webhookUrl) - 1] = '\0';
 
-    const float    pct    = (totalMl / (float)goalMl) * 100.0f;
-    const float    remain = totalMl >= (float)goalMl ? 0.0f : ((float)goalMl - totalMl);
-
-    uint32_t    color;
-    const char* filledEmoji;
-    if (pct < 50.0f) {
-        color = 15158332; filledEmoji = "🟥";
-    } else if (pct < 80.0f) {
-        color = 15132194; filledEmoji = "🟨";
-    } else if (pct < 100.0f) {
-        color = 3447003;  filledEmoji = "🟦";
-    } else {
-        color = 3066993;  filledEmoji = "🟩";
-    }
-
-    // Clamp to [0,10]: guards against negative totalMl or NaN (NaN comparisons are false)
-    const int filled = (pct != pct || pct <= 0.0f) ? 0 : (pct >= 100.0f ? 10 : (int)(pct / 10.0f));
-    char bar[60];
-    bar[0] = '\0';
-    for (int i = 0;      i < filled; i++) strcat(bar, filledEmoji);
-    for (int i = filled; i < 10;     i++) strcat(bar, "⬜");
-
-    char lastLine[48];
-    if (remain <= 0.0f) {
-        snprintf(lastLine, sizeof(lastLine), "第 %u 杯，已達標", (unsigned)drinkCount);
-    } else {
-        snprintf(lastLine, sizeof(lastLine), "第 %u 杯，還差 %.0f ml 達標", (unsigned)drinkCount, remain);
-    }
-
     const int written = snprintf(p->body, sizeof(p->body),
-        "{\"embeds\":[{\"title\":\"本次 +%.0f ml\","
-        "\"description\":\"今日累計\\n%.0f ml / %u ml\\n\\n%s  %.0f%%\\n%s\","
-        "\"color\":%u}]}",
-        amountMl, totalMl, (unsigned)goalMl,
-        bar, pct, lastLine,
-        (unsigned)color);
+        "{\"content\":\"💧 本次 +%.0f ml（今日 %.0f/%u ml）\"}",
+        amountMl, totalMl, (unsigned)goalMl);
     if (written >= (int)sizeof(p->body)) {
         Serial.println("[Discord] notifyDrink: body truncated, aborting POST");
         delete p;
@@ -139,6 +129,10 @@ void DiscordNotifier::notifyDrink(float amountMl, float totalMl, uint32_t drinkC
 }
 
 bool DiscordNotifier::notifyDailySummary(float totalMl, uint32_t drinkCount, const String& dateStr) {
+    if (_state && !_state->ntpSynced) {
+        Serial.println("[Discord] notifyDailySummary skipped: NTP time not synchronized");
+        return false;
+    }
     char webhookUrl[512];
     uint32_t goalMl;
     if (!_copyConfig(webhookUrl, sizeof(webhookUrl), goalMl)) {
@@ -159,7 +153,8 @@ bool DiscordNotifier::notifyDailySummary(float totalMl, uint32_t drinkCount, con
     strncpy(p->webhookUrl, webhookUrl, sizeof(p->webhookUrl) - 1);
     p->webhookUrl[sizeof(p->webhookUrl) - 1] = '\0';
 
-    const float    pct      = (totalMl > 0.0f) ? (totalMl / (float)goalMl) * 100.0f : 0.0f;
+    const float    rawPct   = (totalMl > 0.0f) ? (totalMl / (float)goalMl) * 100.0f : 0.0f;
+    const float    pct      = (rawPct > 0.0f) ? (rawPct > 999.0f ? 999.0f : rawPct) : 0.0f;
     const bool     achieved = (totalMl >= (float)goalMl);
     const float    remain   = achieved ? 0.0f : ((float)goalMl - totalMl);
     const float    over     = achieved ? (totalMl - (float)goalMl) : 0.0f;
@@ -167,18 +162,18 @@ bool DiscordNotifier::notifyDailySummary(float totalMl, uint32_t drinkCount, con
 
     uint32_t    color;
     const char* filledEmoji;
-    if (pct < 50.0f) {
+    if (rawPct < 50.0f) {
         color = 15158332; filledEmoji = "🟥";
-    } else if (pct < 80.0f) {
+    } else if (rawPct < 80.0f) {
         color = 15132194; filledEmoji = "🟨";
-    } else if (pct < 100.0f) {
+    } else if (rawPct < 100.0f) {
         color = 3447003;  filledEmoji = "🟦";
     } else {
         color = 3066993;  filledEmoji = "🟩";
     }
 
     // Clamp to [0,10]: guards against NaN (NaN comparisons are false)
-    const int filled = (pct != pct || pct <= 0.0f) ? 0 : (pct >= 100.0f ? 10 : (int)(pct / 10.0f));
+    const int filled = (rawPct != rawPct || rawPct <= 0.0f) ? 0 : (rawPct >= 100.0f ? 10 : (int)(rawPct / 10.0f));
     char bar[60];
     bar[0] = '\0';
     for (int i = 0;      i < filled; i++) strcat(bar, filledEmoji);
@@ -253,7 +248,7 @@ void DiscordNotifier::_send(TaskParam* p) {
         bool retryable = false;
         {   // Scope ensures destructors run before next iteration / vTaskDelete
             WiFiClientSecure client;
-            client.setInsecure();
+            client.setCACert(DISCORD_ROOT_CA);
             HTTPClient http;
             http.setTimeout(10000);
 

@@ -3,109 +3,73 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>設定 — 水杯追蹤器</title>
+<title>HydraCup / 設定</title>
+<script>
+(function () {
+  var key = 'iot-ui-theme', stored = null;
+  try { stored = localStorage.getItem(key); } catch (e) {}
+  var theme = (stored === 'light' || stored === 'dark') ? stored :
+    (matchMedia('(prefers-color-scheme:dark)').matches ? 'dark' : 'light');
+  document.documentElement.dataset.theme = theme;
+})();
+</script>
+<link rel="icon" type="image/svg+xml" href="/favicon.svg">
 <link rel="stylesheet" href="/style.css">
 </head>
 <body>
-<div class="container">
-  <div class="page-title">⚙️ 設定</div>
-
-  <!-- 飲水目標 -->
-  <div class="section-title">飲水目標</div>
-  <div class="form-group">
-    <label>每日目標 (ml)</label>
-    <input type="number" id="dg" min="100" max="9999">
+<header class="topbar"><div class="topbar-in">
+  <a class="brand" href="/"><span class="brand-mark">HC</span><span class="brand-copy">HYDRACUP<span class="brand-sub">LOCAL DEVICE / WATER TRACKER</span></span></a>
+  <div class="topbar-actions">
+    <nav class="nav" aria-label="主要導覽"><a href="/">儀表板</a><a href="/history">歷史</a><a class="active" aria-current="page" href="/settings">設定</a></nav>
+    <div class="theme-toggle" role="group" aria-label="色彩主題"><button type="button" data-theme-choice="light" aria-pressed="false">紙</button><button type="button" data-theme-choice="dark" aria-pressed="false">夜</button></div>
+    <button class="nav-logout" type="button" data-logout>登出</button>
   </div>
-
-  <!-- 提醒 -->
-  <div class="section-title">提醒</div>
-  <div class="checkbox-row">
-    <input type="checkbox" id="re"><label for="re">啟用提醒</label>
-  </div>
-  <div class="form-group">
-    <label>間隔（分鐘）</label>
-    <input type="number" id="ri" min="1" max="1440">
-  </div>
-  <div class="form-group">
-    <label>警報持續時間（秒，拿起杯子可提前停止）</label>
-    <input type="number" id="rat" min="5" max="3600">
-  </div>
-
-  <!-- 蜂鳴器 -->
-  <div class="section-title">蜂鳴器</div>
-  <div class="checkbox-row">
-    <input type="checkbox" id="be"><label for="be">啟用蜂鳴器</label>
-  </div>
-  <div class="form-group">
-    <label>頻率 (Hz)</label>
-    <input type="number" id="bf" min="500" max="5000">
-  </div>
-  <div class="form-group">
-    <label>音量 (%)</label>
-    <input type="number" id="bv" min="0" max="100">
-  </div>
-  <div class="form-group">
-    <label>持續時間 (ms)</label>
-    <input type="number" id="bd" min="50" max="2000">
-  </div>
-
-  <!-- 進階感測器 -->
-  <div class="section-title">進階感測器設定</div>
-  <div class="warn-banner">⚠️ 修改後需重新啟動才能生效。設定不當可能影響喝水偵測準確性，請謹慎調整。</div>
-  <div class="form-group">
-    <label>杯子存在閾值 (g)</label>
-    <input type="number" id="cpt" min="10" max="500" step="0.5">
-  </div>
-  <div class="form-group">
-    <label>穩定容差 (g)</label>
-    <input type="number" id="stg" min="0.5" max="20" step="0.5">
-  </div>
-  <div class="form-group">
-    <label>穩定持續時間 (ms)</label>
-    <input type="number" id="sdm" min="500" max="10000" step="100">
-  </div>
-  <div class="form-group">
-    <label>最小飲水量 (ml)</label>
-    <input type="number" id="mnd" min="5" max="100">
-  </div>
-  <div class="form-group">
-    <label>最大飲水量 (ml)</label>
-    <input type="number" id="mxd" min="50" max="1000" step="10">
-  </div>
-
-  <!-- WiFi -->
-  <div class="section-title">WiFi（變更後需重新啟動）</div>
-  <div class="form-group">
-    <label>SSID</label>
-    <input type="text" id="ws">
-  </div>
-  <div class="form-group">
-    <label>密碼（留空 = 不修改）</label>
-    <input type="password" id="wp" placeholder="留空 = 不修改">
-  </div>
-
-  <!-- Discord -->
-  <div class="section-title">Discord Webhook（選填）</div>
-  <div class="form-group">
-    <label>Webhook URL</label>
-    <input type="url" id="wh" placeholder="https://discord.com/api/webhooks/...">
-  </div>
-
-  <!-- NTP -->
-  <div class="section-title">NTP / 時區（變更後需重新啟動）</div>
-  <div class="checkbox-row">
-    <input type="checkbox" id="ne"><label for="ne">啟用 NTP 時間同步</label>
-  </div>
-  <div class="form-group">
-    <label>伺服器 1</label>
-    <input type="text" id="n1">
-  </div>
-  <div class="form-group">
-    <label>伺服器 2</label>
-    <input type="text" id="n2">
-  </div>
-  <div class="form-group">
-    <label>時區（UTC 偏移）</label>
+</div></header>
+<main class="wrap">
+  <div class="intro"><div><div class="kicker">03 / configuration</div><h1>裝置設定</h1></div><p>調整提醒、感測器與網路服務。敏感資訊只送出你重新輸入的內容，不會回填明文。</p></div>
+  <div class="message" id="msg" aria-live="polite"></div>
+  <form onsubmit="return false">
+    <section class="card"><h2><span>01</span>飲水與提醒</h2>
+      <div class="field"><label for="dg">每日目標（ml）</label><input type="number" id="dg" min="100" max="9999"></div>
+      <div class="check"><input type="checkbox" id="re"><label for="re">啟用飲水提醒</label></div>
+      <div class="field"><label for="ri">提醒間隔（分鐘）</label><input type="number" id="ri" min="1" max="1440"></div>
+      <div class="field"><label for="rat">警報持續時間（秒）</label><input type="number" id="rat" min="5" max="3600"><p class="hint">拿起杯子後會提前停止。</p></div>
+    </section>
+    <section class="card"><h2><span>02</span>蜂鳴器</h2>
+      <div class="check"><input type="checkbox" id="be"><label for="be">啟用蜂鳴器</label></div>
+      <div class="field"><label for="bf">頻率（Hz）</label><input type="number" id="bf" min="500" max="5000"></div>
+      <div class="field"><label for="bv">音量（%）</label><input type="number" id="bv" min="0" max="100"></div>
+      <div class="field"><label for="bd">持續時間（ms）</label><input type="number" id="bd" min="50" max="2000"></div>
+    </section>
+    <section class="card"><h2><span>03</span>進階感測器</h2>
+      <p class="section-note">這些設定會影響喝水事件判斷，儲存後需重新啟動才會生效。</p>
+      <div class="warn-banner">修改前請先確認目前的杯子與秤台狀態。</div>
+      <div class="field"><label for="cpt">杯子存在閾值（g）</label><input type="number" id="cpt" min="10" max="500" step="0.5"></div>
+      <div class="field"><label for="stg">穩定容差（g）</label><input type="number" id="stg" min="0.5" max="20" step="0.5"></div>
+      <div class="field"><label for="sdm">穩定持續時間（ms）</label><input type="number" id="sdm" min="500" max="10000" step="100"></div>
+      <div class="field"><label for="mnd">最小飲水量（ml）</label><input type="number" id="mnd" min="5" max="100"></div>
+      <div class="field"><label for="mxd">最大飲水量（ml）</label><input type="number" id="mxd" min="50" max="1000" step="10"></div>
+    </section>
+    <section class="card"><h2><span>04</span>WiFi 與通知</h2>
+      <p class="section-note">WiFi 變更後需重新啟動。Webhook URL 為敏感資料。</p>
+      <div class="field">
+        <label for="wifi-networks">附近 WiFi 網路</label>
+        <div class="field-with-action">
+          <select id="wifi-networks"><option value="">尚未掃描</option></select>
+          <button class="ghost" type="button" id="wifi-scan-btn">掃描</button>
+        </div>
+        <p class="hint" id="wifi-scan-hint" aria-live="polite">掃描結果會保留目前選取的 SSID。</p>
+        <div class="message" id="wifi-scan-msg" role="alert" aria-live="polite"></div>
+      </div>
+      <div class="field"><label for="ws">WiFi SSID（可手動輸入）</label><input type="text" id="ws" autocomplete="off"></div>
+      <div class="field"><label for="wp">WiFi 密碼</label><input type="password" id="wp" placeholder="留空以保留"></div>
+      <div class="field"><label for="wh">Discord Webhook URL</label><input type="url" id="wh" placeholder="已設定；留空以保留"></div>
+    </section>
+    <section class="card"><h2><span>05</span>NTP 與時區</h2>
+      <div class="check"><input type="checkbox" id="ne"><label for="ne">啟用 NTP 時間同步</label></div>
+      <div class="field"><label for="n1">伺服器 1</label><input type="text" id="n1"></div>
+      <div class="field"><label for="n2">伺服器 2</label><input type="text" id="n2"></div>
+      <div class="field"><label for="tz">時區（UTC 偏移）</label>
     <select id="tz">
       <option value="-43200">UTC-12</option>
       <option value="-39600">UTC-11</option>
@@ -143,85 +107,37 @@
       <option value="45900">UTC+12:45</option>
       <option value="46800">UTC+13</option>
       <option value="50400">UTC+14</option>
-    </select>
-  </div>
-
-  <!-- MQTT -->
-  <div class="section-title">MQTT（選填，變更後需重新啟動）</div>
-  <div class="checkbox-row">
-    <input type="checkbox" id="me"><label for="me">啟用 MQTT 發佈</label>
-  </div>
-  <div class="form-group">
-    <label>Broker 位址</label>
-    <input type="text" id="mh" placeholder="192.168.1.50 或 epaper-display.local">
-  </div>
-  <div class="form-group">
-    <label>Port</label>
-    <input type="number" id="mp" min="1" max="65535">
-  </div>
-  <div class="form-group">
-    <label>帳號</label>
-    <input type="text" id="mu">
-  </div>
-  <div class="form-group">
-    <label>密碼（留空 = 不修改）</label>
-    <input type="password" id="mpw" placeholder="留空 = 不修改">
-  </div>
-  <div class="form-group">
-    <label>Client ID</label>
-    <input type="text" id="mc" placeholder="hydracup-device">
-  </div>
-  <div class="form-group">
-    <label>心跳間隔（秒）</label>
-    <input type="number" id="mhb" min="5" max="3600">
-  </div>
-
-  <button class="btn btn-primary" onclick="save()">儲存設定</button>
-  <button class="btn btn-danger" onclick="reboot()">重新啟動裝置</button>
-  <div class="msg" id="msg"></div>
+    </select></div>
+    </section>
+    <section class="card"><h2><span>06</span>MQTT</h2>
+      <p class="section-note">選填；變更後需重新啟動。</p>
+      <div class="check"><input type="checkbox" id="me"><label for="me">啟用 MQTT 發佈</label></div>
+      <div class="field"><label for="mh">Broker 位址</label><input type="text" id="mh" placeholder="192.168.1.50 或 epaper-display.local"></div>
+      <div class="field"><label for="mp">Port</label><input type="number" id="mp" min="1" max="65535"></div>
+      <div class="field"><label for="mu">帳號</label><input type="text" id="mu"></div>
+      <div class="field"><label for="mpw">密碼</label><input type="password" id="mpw" placeholder="留空以保留"></div>
+      <div class="field"><label for="mc">Client ID</label><input type="text" id="mc" placeholder="hydracup-device"></div>
+      <div class="field"><label for="mhb">心跳間隔（秒）</label><input type="number" id="mhb" min="5" max="3600"></div>
+    </section>
+    <div class="wide actions"><button class="btn btn-primary" type="button" onclick="save()">儲存設定</button><button class="btn btn-danger" type="button" onclick="if(confirm('確定要重新啟動 HydraCup？')) reboot()">重新啟動裝置</button></div>
+  </form>
 
   <hr class="divider">
+  <section id="calibration" class="card"><h2><span>07</span>秤重校正</h2>
+    <p class="section-note">先移除所有重物歸零，再放上已知重量完成校正。</p>
+    <div class="split-grid"><div><div class="label">目前校正因子</div><div class="factor-badge" id="cur-factor">--</div></div><div><div class="label">即時重量</div><div class="weight-display-lg" id="cal-weight">-- g</div></div></div>
+    <div class="section-title">步驟 1 / 歸零</div><div class="actions"><button class="btn btn-secondary" type="button" onclick="doTare()">執行歸零</button></div><div class="msg" id="tare-msg"></div>
+    <div class="section-title">步驟 2 / 已知重量</div><div class="field"><label for="known-w">已知重量（g）</label><input type="number" id="known-w" min="1" max="5000" step="0.1" placeholder="例如 500"></div><div class="actions"><button class="btn btn-primary" type="button" onclick="doCalibrate()">完成校正</button></div><div class="msg" id="cal-msg"></div>
+    <div class="card" id="cal-result" style="display:none;margin-top:1rem"><div class="label">校正結果</div><div id="cal-result-body" style="font-size:.88em;line-height:2;color:var(--muted)"></div></div>
+</section>
+</main>
 
-  <!-- 校正區塊 -->
-  <div id="calibration">
-    <div class="page-title" style="font-size:1.05em;margin-top:0">🔧 秤重校正</div>
+<footer class="site-footer"><div class="footer-in">
+  <div class="footer-repo"><span class="label">SOURCE</span><a href="https://github.com/Ning0612/esp32-hydracup">Ning0612/esp32-hydracup</a></div>
+  <div class="footer-meta">Vanilla HTML／CSS／JS · ESP32 local device · MIT License</div>
+</div></footer>
 
-    <div class="card" style="text-align:center">
-      <div class="label">目前校正因子</div>
-      <div class="factor-badge" id="cur-factor">--</div>
-      <div style="margin-top:16px">
-        <div class="label">即時重量</div>
-        <div class="weight-display-lg" id="cal-weight">-- g</div>
-      </div>
-    </div>
-
-    <div class="section-title">步驟 1：歸零</div>
-    <p class="sub" style="margin:0 0 10px">移除所有重物後按下歸零。</p>
-    <button class="btn btn-secondary" onclick="doTare()">歸零</button>
-    <div class="msg" id="tare-msg"></div>
-
-    <div class="section-title">步驟 2：輸入已知重量</div>
-    <p class="sub" style="margin:0 0 10px">放上已知重量的砝碼後輸入克數並校正。</p>
-    <div class="form-group">
-      <label>已知重量 (g)</label>
-      <input type="number" id="known-w" min="1" max="5000" step="0.1" placeholder="例如 500">
-    </div>
-    <button class="btn btn-primary" onclick="doCalibrate()">校正</button>
-    <div class="msg" id="cal-msg"></div>
-
-    <div class="card" id="cal-result" style="display:none;margin-top:10px">
-      <div class="label" style="margin-bottom:8px">校正結果</div>
-      <div id="cal-result-body" style="font-size:.88em;line-height:2;color:var(--text2)"></div>
-    </div>
-  </div>
-</div>
-
-<nav>
-  <a href="/"><span class="ni">🏠</span>首頁</a>
-  <a href="/history"><span class="ni">📊</span>歷史</a>
-  <a href="/settings" class="active"><span class="ni">⚙️</span>設定</a>
-</nav>
-
+<script src="/ui.js"></script>
 <script>
 let wtTimer = null;
 
@@ -232,7 +148,7 @@ function showMsg(id, text, ok) {
 }
 
 function load() {
-  fetch('/api/config').then(r => r.json()).then(d => {
+  return hydraFetch('/api/config').then(r => r.json()).then(d => {
     if (!d.ok) { showMsg('msg', '設定載入失敗：' + (d.error || '未知'), false); return; }
     document.getElementById('dg').value   = d.dailyGoalMl || 2000;
     document.getElementById('ri').value   = d.reminderIntervalMin || 60;
@@ -268,6 +184,64 @@ function load() {
   }).catch(() => showMsg('msg', '設定載入失敗，請重新整理', false));
 }
 
+function showScanError(text) {
+  const el = document.getElementById('wifi-scan-msg');
+  el.textContent = text;
+  el.className = 'message error';
+  el.style.display = 'block';
+}
+
+function clearScanError() {
+  const el = document.getElementById('wifi-scan-msg');
+  el.textContent = '';
+  el.className = 'message';
+  el.style.display = 'none';
+}
+
+function scanWifi() {
+  const button = document.getElementById('wifi-scan-btn');
+  const select = document.getElementById('wifi-networks');
+  const hint = document.getElementById('wifi-scan-hint');
+  const current = document.getElementById('ws').value;
+  button.disabled = true;
+  button.textContent = '掃描中…';
+  clearScanError();
+  hint.className = 'hint';
+  hint.textContent = '正在搜尋附近網路…';
+  return hydraFetch('/api/wifi/scan').then(r => r.json()).then(d => {
+    if (!d.ok) {
+      hint.textContent = '目前無法更新清單，仍保留原本選取的 SSID。';
+      showScanError('掃描失敗：' + (d.error || '無法取得附近網路。'));
+      return;
+    }
+    const networks = Array.isArray(d.networks) ? d.networks.slice().sort((a, b) => b.rssi - a.rssi) : [];
+    select.innerHTML = '';
+    const placeholder = document.createElement('option');
+    placeholder.value = '';
+    placeholder.textContent = networks.length ? '選擇附近網路（' + networks.length + ' 個）' : '未找到網路，請重試';
+    select.appendChild(placeholder);
+    networks.forEach(function (network) {
+      const option = document.createElement('option');
+      option.value = network.ssid;
+      option.textContent = network.ssid + (network.secure ? '（已加密）' : '（開放）') + ' · ' + network.rssi + ' dBm';
+      select.appendChild(option);
+    });
+    if (current && networks.some(n => n.ssid === current)) select.value = current;
+    hint.textContent = networks.length ? '選取後會帶入下方 SSID；隱藏網路可手動輸入。' : '附近沒有可見網路，仍可手動輸入 SSID。';
+  }).catch(function () {
+    hint.textContent = '目前無法更新清單，仍保留原本選取的 SSID。';
+    showScanError('掃描失敗：暫時無法取得附近網路。');
+  }).finally(function () {
+    button.disabled = false;
+    button.textContent = '重新掃描';
+  });
+}
+
+document.getElementById('wifi-networks').addEventListener('change', function () {
+  if (this.value) document.getElementById('ws').value = this.value;
+});
+document.getElementById('wifi-scan-btn').addEventListener('click', function () { scanWifi(); });
+
 function save() {
   const wp = document.getElementById('wp').value;
   const wh = document.getElementById('wh').value;
@@ -302,7 +276,7 @@ function save() {
   if (wh.indexOf('****') < 0) body.discordWebhookUrl = wh;
   if (mpw) body.mqttPassword = mpw;
 
-  fetch('/api/config', {
+  hydraFetch('/api/config', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body)
@@ -314,21 +288,21 @@ function save() {
 }
 
 function reboot() {
-  fetch('/api/reboot', { method: 'POST' })
+  hydraFetch('/api/reboot', { method: 'POST' })
     .then(() => showMsg('msg', '裝置重新啟動中…', true))
     .catch(() => {});
 }
 
 // Calibration
 function fetchWeight() {
-  fetch('/api/weight').then(r => r.json()).then(d => {
+  hydraFetch('/api/weight').then(r => r.json()).then(d => {
     if (d.ok && d.weight_g != null)
       document.getElementById('cal-weight').textContent = (+d.weight_g).toFixed(1) + ' g';
   }).catch(() => {});
 }
 
 function doTare() {
-  fetch('/api/tare', { method: 'POST' }).then(r => r.json()).then(d => {
+  hydraFetch('/api/tare', { method: 'POST' }).then(r => r.json()).then(d => {
     showMsg('tare-msg', d.ok ? '歸零完成' : '錯誤：' + d.error, d.ok);
   }).catch(() => showMsg('tare-msg', '連線失敗', false));
 }
@@ -336,7 +310,7 @@ function doTare() {
 function doCalibrate() {
   const kw = parseFloat(document.getElementById('known-w').value);
   if (!kw || kw <= 0) { showMsg('cal-msg', '請輸入有效的已知重量', false); return; }
-  fetch('/api/calibrate', {
+  hydraFetch('/api/calibrate', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ known_weight_g: kw })
@@ -346,7 +320,7 @@ function doCalibrate() {
       const cf = +d.calibration_factor, cw = +d.current_weight_g;
       document.getElementById('cur-factor').textContent = cf.toFixed(4);
       document.getElementById('cal-result-body').innerHTML =
-        '校正因子：<strong style="color:var(--success)">' + cf.toFixed(4) + '</strong><br>' +
+        '校正因子：<strong style="color:var(--teal)">' + cf.toFixed(4) + '</strong><br>' +
         '當前讀數：<strong>' + cw.toFixed(1) + ' g</strong><br>' +
         '已知重量：<strong>' + kw.toFixed(1) + ' g</strong><br>' +
         '誤差：<strong>' + Math.abs(cw - kw).toFixed(1) + ' g</strong>';
@@ -366,7 +340,7 @@ window.addEventListener('beforeunload', () => clearInterval(wtTimer));
 if (location.hash === '#calibration')
   document.getElementById('calibration').scrollIntoView({ behavior: 'smooth' });
 
-load();
+load().finally(() => scanWifi());
 </script>
 </body>
 </html>

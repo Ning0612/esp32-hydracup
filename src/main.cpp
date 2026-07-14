@@ -48,6 +48,7 @@ static TaskHandle_t        s_controlTaskHandle = nullptr;
 static uint32_t            s_controlHeartbeat = 0;
 static uint32_t            s_dailyGoalMl = DEFAULT_DAILY_GOAL_ML;
 static uint32_t            s_pendingTareRequestId = 0;
+static bool                s_onlineNotified = false;
 
 static void replyControl(const ControlCommand& command, ControlResultStatus status) {
     ControlResult result;
@@ -166,6 +167,13 @@ static void runControlIteration() {
     appState.weightGrams = scaleManager.getWeightGrams();
     appState.nextReminderSec = reminderManager.getNextReminderSec();
     appState.ntpSynced = timeManager.isSynced();
+
+    // Discord uses verified TLS; wait until the RTC has a trustworthy time so
+    // certificate validity checks do not make the boot notification fail.
+    if (appState.mode == AppMode::NORMAL && !s_onlineNotified && appState.ntpSynced) {
+        discordNotifier.notifyOnline(appState.ipAddress);
+        s_onlineNotified = true;
+    }
 
     if (appState.mode == AppMode::NORMAL) {
         const CupState currentCupState = drinkDetector.getCupState();
@@ -311,7 +319,6 @@ void setup() {
                               buzzerController, reminderManager, LogFS,
                               runtimeCoordinator, eventLogger, discordNotifier);
         runtimeCoordinator.publishConnectivity(true, appState.ipAddress);
-        discordNotifier.notifyOnline(appState.ipAddress);
         Serial.printf("[INFO] Normal Mode  IP: %s\n", appState.ipAddress.c_str());
         displayManager.sleep();
         s_prevCupState    = drinkDetector.getCupState();
@@ -322,7 +329,7 @@ void setup() {
         appState.ipAddress = wifiManager.getAPIP();
         runtimeCoordinator.publishConnectivity(false, appState.ipAddress);
         if (apOk) {
-            configPortal.begin(configManager, appState);
+            configPortal.begin(configManager, appState, appConfig);
             displayManager.showAPMode(appConfig.apSsid, appConfig.apPassword, appState.ipAddress);
             Serial.printf("[INFO] AP Mode  SSID: %s  IP: %s\n",
                           appConfig.apSsid.c_str(), appState.ipAddress.c_str());

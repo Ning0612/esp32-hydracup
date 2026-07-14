@@ -3,46 +3,64 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>歷史記錄 — 水杯追蹤器</title>
+<title>HydraCup / 歷史</title>
+<script>
+(function () {
+  var key = 'iot-ui-theme', stored = null;
+  try { stored = localStorage.getItem(key); } catch (e) {}
+  var theme = (stored === 'light' || stored === 'dark') ? stored :
+    (matchMedia('(prefers-color-scheme:dark)').matches ? 'dark' : 'light');
+  document.documentElement.dataset.theme = theme;
+})();
+</script>
+<link rel="icon" type="image/svg+xml" href="/favicon.svg">
 <link rel="stylesheet" href="/style.css">
 </head>
 <body>
-<div class="container">
-  <div class="page-title">📊 飲水歷史</div>
+<header class="topbar"><div class="topbar-in">
+  <a class="brand" href="/"><span class="brand-mark">HC</span><span class="brand-copy">HYDRACUP<span class="brand-sub">LOCAL DEVICE / WATER TRACKER</span></span></a>
+  <div class="topbar-actions">
+    <nav class="nav" aria-label="主要導覽"><a href="/">儀表板</a><a class="active" aria-current="page" href="/history">歷史</a><a href="/settings">設定</a></nav>
+    <div class="theme-toggle" role="group" aria-label="色彩主題"><button type="button" data-theme-choice="light" aria-pressed="false">紙</button><button type="button" data-theme-choice="dark" aria-pressed="false">夜</button></div>
+    <button class="nav-logout" type="button" data-logout>登出</button>
+  </div>
+</div></header>
+<main class="wrap">
+  <div class="intro"><div><div class="kicker">02 / history</div><h1>飲水歷史</h1></div><p>從年度節奏到單次事件，查看 HydraCup 記錄下來的飲水習慣與空窗。</p></div>
 
   <!-- 年度熱力圖 -->
   <div class="card">
     <div class="hmap-header">
       <div class="label">年度飲水熱力圖</div>
       <div style="display:flex;align-items:center;gap:6px">
-        <button class="hmap-yr-btn" id="yr-prev">&#8249;</button>
+        <button class="hmap-yr-btn" id="yr-prev" aria-label="查看上一年">&#8249;</button>
         <span class="hmap-yr-label" id="yr-label"></span>
-        <button class="hmap-yr-btn" id="yr-next">&#8250;</button>
+        <button class="hmap-yr-btn" id="yr-next" aria-label="查看下一年">&#8250;</button>
       </div>
     </div>
     <div id="hmap-loading" class="sub" style="text-align:center;padding:24px 0">載入中…</div>
     <div id="hmap-wrap" class="hmap-wrap" style="display:none">
-      <canvas id="hmap-canvas"></canvas>
+      <canvas id="hmap-canvas" aria-label="年度每日飲水量熱力圖"></canvas>
     </div>
-    <div id="hmap-tip" class="hmap-tip"></div>
+    <div id="hmap-tip" class="hmap-tip" aria-live="polite"></div>
     <div class="hmap-legend">
       <span>少</span>
-      <canvas id="hmap-lgd" height="12"></canvas>
+      <canvas id="hmap-lgd" height="12" aria-label="飲水量圖例"></canvas>
       <span>多（≥目標）</span>
     </div>
   </div>
 
   <!-- 月份導航 -->
   <div class="month-nav">
-    <button id="btn-prev">&#8249;</button>
+    <button id="btn-prev" aria-label="查看上一個月">&#8249;</button>
     <span class="month-label" id="month-label">--</span>
-    <button id="btn-next">&#8250;</button>
+    <button id="btn-next" aria-label="查看下一個月">&#8250;</button>
   </div>
 
   <!-- 每日飲水量 -->
   <div class="card">
     <div class="label" style="margin-bottom:10px">每日飲水量</div>
-    <div class="chart-wrap"><canvas id="daily-chart" height="180"></canvas></div>
+    <div class="chart-wrap"><canvas id="daily-chart" height="180" aria-label="本月每日飲水量圖表"></canvas></div>
     <div id="daily-empty" class="empty-state" style="display:none">本月無飲水記錄</div>
   </div>
 
@@ -102,20 +120,20 @@
   <!-- 時段分布 -->
   <div class="card">
     <div class="label" style="margin-bottom:10px">時段分布（飲水次數）</div>
-    <div class="chart-wrap"><canvas id="hour-chart" height="120"></canvas></div>
+    <div class="chart-wrap"><canvas id="hour-chart" height="120" aria-label="本月時段飲水次數圖表"></canvas></div>
     <div id="hour-empty" class="empty-state" style="display:none">無時間同步記錄</div>
   </div>
 
   <!-- 週別飲水量 -->
   <div class="card">
     <div class="label" style="margin-bottom:10px">週別飲水量（日平均）</div>
-    <div class="chart-wrap"><canvas id="week-chart" height="140"></canvas></div>
+    <div class="chart-wrap"><canvas id="week-chart" height="140" aria-label="本月星期飲水量圖表"></canvas></div>
     <div id="week-empty" class="empty-state" style="display:none">本月無飲水記錄</div>
   </div>
 
   <!-- 詳細記錄（預設收合） -->
   <div class="card">
-    <button class="log-toggle" id="log-toggle" onclick="toggleLog()">
+    <button class="log-toggle" id="log-toggle" aria-expanded="false" aria-controls="log-section" onclick="toggleLog()">
       ▶ 詳細記錄 <span id="log-count"></span>
     </button>
     <div id="log-section" style="display:none;margin-top:10px">
@@ -136,20 +154,20 @@
         </table>
       </div>
       <div class="pagination" id="pagination" style="display:none">
-        <button id="pg-prev" onclick="goPage(-1)">&#8249;</button>
+         <button id="pg-prev" aria-label="查看上一頁記錄" onclick="goPage(-1)">&#8249;</button>
         <span id="pg-info"></span>
-        <button id="pg-next" onclick="goPage(1)">&#8250;</button>
+         <button id="pg-next" aria-label="查看下一頁記錄" onclick="goPage(1)">&#8250;</button>
       </div>
     </div>
   </div>
-</div>
+</main>
 
-<nav>
-  <a href="/"><span class="ni">🏠</span>首頁</a>
-  <a href="/history" class="active"><span class="ni">📊</span>歷史</a>
-  <a href="/settings"><span class="ni">⚙️</span>設定</a>
-</nav>
+<footer class="site-footer"><div class="footer-in">
+  <div class="footer-repo"><span class="label">SOURCE</span><a href="https://github.com/Ning0612/esp32-hydracup">Ning0612/esp32-hydracup</a></div>
+  <div class="footer-meta">Vanilla HTML／CSS／JS · ESP32 local device · MIT License</div>
+</div></footer>
 
+<script src="/ui.js"></script>
 <script>
 const now = new Date();
 let curYear   = now.getFullYear();
@@ -166,7 +184,7 @@ let _cachedEntries = [];
 let _logSorted = [], _logPage = 1, _logPageSize = 10, _logExpanded = false;
 let _fetchSeq = 0;
 
-fetch('/api/config').then(r => r.json()).then(d => {
+hydraFetch('/api/config').then(r => r.json()).then(d => {
   if (d.ok && d.dailyGoalMl > 0 && d.dailyGoalMl < 50000) dailyGoal = d.dailyGoalMl;
   render();
   loadYearHeatmap(curHmapYear);
@@ -193,7 +211,7 @@ async function loadYearHeatmap(year) {
     if (year < curY || m <= curM) months.push(String(m).padStart(2, '0'));
 
   const results = await Promise.allSettled(
-    months.map(m => fetch('/api/logs?month=' + year + '-' + m).then(r => r.json()))
+    months.map(m => hydraFetch('/api/logs?month=' + year + '-' + m).then(r => r.json()))
   );
   if (seq !== _hmapFetchSeq) return;
 
@@ -242,11 +260,12 @@ function drawHeatmap(year, dt) {
   const ctx = canvas.getContext('2d');
   ctx.scale(r, r);
   ctx.clearRect(0, 0, cw, ch);
+  const colors = chartColors();
 
   // Month labels
   const MONTHS = ['1月','2月','3月','4月','5月','6月','7月','8月','9月','10月','11月','12月'];
-  ctx.font = '9px -apple-system, sans-serif';
-  ctx.fillStyle = '#8ca8b8';
+  ctx.font = '9px Consolas, monospace';
+  ctx.fillStyle = colors.muted;
   ctx.textAlign = 'left';
   let lastCol = -1;
   for (let m = 0; m < 12; m++) {
@@ -271,20 +290,14 @@ function drawHeatmap(year, dt) {
     const y    = LH + row * STEP;
     const tot  = dt[d] || 0;
 
-    let fill;
-    if (tot <= 0)              fill = 'rgba(255,255,255,0.06)';
-    else if (tot >= dailyGoal) fill = '#00ff88';
-    else {
-      const pct = tot / dailyGoal;
-      fill = pct < 0.25 ? 'rgba(0,212,255,0.18)'
-           : pct < 0.50 ? 'rgba(0,212,255,0.40)'
-           : pct < 0.75 ? 'rgba(0,212,255,0.65)'
-                        : 'rgba(0,212,255,0.88)';
-    }
-    ctx.fillStyle = fill;
+    const pct = dailyGoal > 0 ? tot / dailyGoal : 0;
+    ctx.fillStyle = tot <= 0 ? colors.surface2 : colors.teal;
+    ctx.globalAlpha = tot <= 0 ? 1 : tot >= dailyGoal ? 1 :
+      (pct < 0.25 ? .24 : pct < 0.50 ? .42 : pct < 0.75 ? .66 : .86);
     ctx.beginPath();
-    ctx.roundRect ? ctx.roundRect(x, y, CELL, CELL, 2) : ctx.rect(x, y, CELL, CELL);
+    ctx.rect(x, y, CELL, CELL);
     ctx.fill();
+    ctx.globalAlpha = 1;
   }
 
   // Store meta for tooltip
@@ -301,13 +314,22 @@ function drawHmapLegend() {
   c.style.width = w + 'px'; c.style.height = h + 'px';
   const ctx = c.getContext('2d');
   ctx.scale(r, r);
-  const cols = ['rgba(255,255,255,0.06)','rgba(0,212,255,0.18)','rgba(0,212,255,0.4)','rgba(0,212,255,0.7)','#00ff88'];
+  const colors = chartColors();
+  const cols = [
+    { color: colors.surface2, alpha: 1 },
+    { color: colors.teal, alpha: .24 },
+    { color: colors.teal, alpha: .42 },
+    { color: colors.teal, alpha: .66 },
+    { color: colors.teal, alpha: 1 }
+  ];
   const cw = 14;
   cols.forEach((col, i) => {
-    ctx.fillStyle = col;
+    ctx.fillStyle = col.color;
+    ctx.globalAlpha = col.alpha;
     ctx.beginPath();
-    ctx.roundRect ? ctx.roundRect(i * (cw + 2), 0, cw, h, 2) : ctx.rect(i * (cw + 2), 0, cw, h);
+    ctx.rect(i * (cw + 2), 0, cw, h);
     ctx.fill();
+    ctx.globalAlpha = 1;
   });
 }
 
@@ -430,6 +452,17 @@ function bestDrinkDay(entries) {
   return best;
 }
 
+function chartColors() {
+  const styles = getComputedStyle(document.documentElement);
+  return {
+    surface2: styles.getPropertyValue('--surface-2').trim(),
+    teal: styles.getPropertyValue('--teal').trim(),
+    tealDark: styles.getPropertyValue('--teal-dark').trim(),
+    muted: styles.getPropertyValue('--muted').trim(),
+    line: styles.getPropertyValue('--line').trim()
+  };
+}
+
 // ─── Canvas Charts ──────────────────────────────────────────────────────────
 
 function setupCanvas(canvas) {
@@ -445,6 +478,7 @@ function setupCanvas(canvas) {
 
 function drawDailyChart(canvas, dailyTotals, goal) {
   const { ctx, w, h } = setupCanvas(canvas);
+  const colors = chartColors();
   const pad = { t: 12, r: 8, b: 30, l: 40 };
   const cw = w - pad.l - pad.r, ch = h - pad.t - pad.b;
   const n = dailyTotals.length;
@@ -454,7 +488,7 @@ function drawDailyChart(canvas, dailyTotals, goal) {
   ctx.clearRect(0, 0, w, h);
 
   const gy = pad.t + ch * (1 - goal / maxVal);
-  ctx.strokeStyle = 'rgba(0,255,136,0.3)';
+  ctx.strokeStyle = colors.line;
   ctx.setLineDash([4, 4]); ctx.lineWidth = 1;
   ctx.beginPath(); ctx.moveTo(pad.l, gy); ctx.lineTo(pad.l + cw, gy); ctx.stroke();
   ctx.setLineDash([]);
@@ -463,14 +497,16 @@ function drawDailyChart(canvas, dailyTotals, goal) {
     const x  = pad.l + i * (barW + gap);
     const bh = v > 0 ? Math.max(2, (v / maxVal) * ch) : 2;
     const y  = pad.t + ch - bh;
-    ctx.fillStyle = v >= goal ? '#00ff88' : v > 0 ? '#00d4ff' : 'rgba(255,255,255,0.1)';
+    ctx.fillStyle = v >= goal ? colors.tealDark : v > 0 ? colors.teal : colors.surface2;
+    ctx.globalAlpha = v > 0 ? (v >= goal ? 1 : .75) : 1;
     ctx.beginPath();
-    ctx.roundRect ? ctx.roundRect(x, y, barW, bh, 3) : ctx.rect(x, y, barW, bh);
+    ctx.rect(x, y, barW, bh);
     ctx.fill();
+    ctx.globalAlpha = 1;
   });
 
-  ctx.fillStyle = '#8ca8b8';
-  ctx.font = '10px -apple-system, sans-serif';
+  ctx.fillStyle = colors.muted;
+  ctx.font = '10px Consolas, monospace';
   ctx.textAlign = 'center';
   for (let i = 0; i < n; i++)
     if (i === 0 || (i + 1) % 5 === 0)
@@ -485,29 +521,33 @@ function drawDailyChart(canvas, dailyTotals, goal) {
 
 function drawHourChart(canvas, bands, labels) {
   const { ctx, w, h } = setupCanvas(canvas);
+  const colors = chartColors();
   const pad = { t: 8, r: 50, b: 8, l: 62 };
   const cw = w - pad.l - pad.r, ch = h - pad.t - pad.b;
   const n = bands.length, maxVal = Math.max(...bands, 1);
   const barH = Math.max(2, ch / n - 4), gap = (ch - barH * n) / (n - 1 || 1);
   ctx.clearRect(0, 0, w, h);
-  ctx.font = '10px -apple-system, sans-serif';
+  ctx.font = '10px Consolas, monospace';
 
   bands.forEach((v, i) => {
     const y  = pad.t + i * (barH + gap);
     const bw = v > 0 ? Math.max(2, (v / maxVal) * cw) : 2;
-    ctx.fillStyle = '#8ca8b8'; ctx.textAlign = 'right';
+    ctx.fillStyle = colors.muted; ctx.textAlign = 'right';
     ctx.fillText(labels[i], pad.l - 5, y + barH / 2 + 4);
-    ctx.fillStyle = v > 0 ? '#00d4ff' : 'rgba(255,255,255,0.1)';
+    ctx.fillStyle = v > 0 ? colors.teal : colors.surface2;
+    ctx.globalAlpha = v > 0 ? .8 : 1;
     ctx.beginPath();
-    ctx.roundRect ? ctx.roundRect(pad.l, y, bw, barH, 3) : ctx.rect(pad.l, y, bw, barH);
+    ctx.rect(pad.l, y, bw, barH);
     ctx.fill();
-    ctx.fillStyle = '#8ca8b8'; ctx.textAlign = 'left';
+    ctx.globalAlpha = 1;
+    ctx.fillStyle = colors.muted; ctx.textAlign = 'left';
     ctx.fillText(v + ' 次', pad.l + bw + 5, y + barH / 2 + 4);
   });
 }
 
 function drawWeekChart(canvas, avgs, labels, goal) {
   const { ctx, w, h } = setupCanvas(canvas);
+  const colors = chartColors();
   const pad = { t: 12, r: 8, b: 28, l: 36 };
   const cw = w - pad.l - pad.r, ch = h - pad.t - pad.b;
   const n = labels.length, maxVal = Math.max(goal, ...avgs, 1);
@@ -515,7 +555,7 @@ function drawWeekChart(canvas, avgs, labels, goal) {
   ctx.clearRect(0, 0, w, h);
 
   const gy = pad.t + ch * (1 - goal / maxVal);
-  ctx.strokeStyle = 'rgba(0,255,136,0.25)';
+  ctx.strokeStyle = colors.line;
   ctx.setLineDash([4, 4]); ctx.lineWidth = 1;
   ctx.beginPath(); ctx.moveTo(pad.l, gy); ctx.lineTo(pad.l + cw, gy); ctx.stroke();
   ctx.setLineDash([]);
@@ -524,14 +564,16 @@ function drawWeekChart(canvas, avgs, labels, goal) {
     const x  = pad.l + i * (barW + gap);
     const bh = v > 0 ? Math.max(2, (v / maxVal) * ch) : 2;
     const y  = pad.t + ch - bh;
-    ctx.fillStyle = v >= goal ? '#00ff88' : v > 0 ? 'rgba(0,212,255,0.75)' : 'rgba(255,255,255,0.08)';
+    ctx.fillStyle = v >= goal ? colors.tealDark : v > 0 ? colors.teal : colors.surface2;
+    ctx.globalAlpha = v > 0 ? (v >= goal ? 1 : .75) : 1;
     ctx.beginPath();
-    ctx.roundRect ? ctx.roundRect(x, y, barW, bh, 3) : ctx.rect(x, y, barW, bh);
+    ctx.rect(x, y, barW, bh);
     ctx.fill();
+    ctx.globalAlpha = 1;
   });
 
-  ctx.fillStyle = '#8ca8b8';
-  ctx.font = '11px -apple-system, sans-serif'; ctx.textAlign = 'center';
+  ctx.fillStyle = colors.muted;
+  ctx.font = '11px Consolas, monospace'; ctx.textAlign = 'center';
   labels.forEach((l, i) => {
     ctx.fillText(l, pad.l + i * (barW + gap) + barW / 2, h - pad.b + 14);
   });
@@ -548,6 +590,7 @@ function drawWeekChart(canvas, avgs, labels, goal) {
 function toggleLog() {
   _logExpanded = !_logExpanded;
   document.getElementById('log-section').style.display = _logExpanded ? '' : 'none';
+  document.getElementById('log-toggle').setAttribute('aria-expanded', _logExpanded ? 'true' : 'false');
   updateToggle();
 }
 
@@ -609,7 +652,7 @@ function render() {
   document.getElementById('btn-next').disabled =
     curYear > todayY || (curYear === todayY && curMonth >= todayM);
 
-  fetch('/api/logs?month=' + month)
+  hydraFetch('/api/logs?month=' + month)
     .then(r => r.json())
     .then(j => {
       if (seq !== _fetchSeq) return;
@@ -718,6 +761,24 @@ window.addEventListener('resize', () => {
     if (_hmapCache[curHmapYear] && document.getElementById('hmap-wrap').style.display !== 'none')
       drawHeatmap(curHmapYear, _hmapCache[curHmapYear]);
   }, 150);
+});
+
+window.addEventListener('hydra-theme-change', () => {
+  const dt = aggregateByDay(_cachedEntries, curYear, curMonth);
+  const dc = document.getElementById('daily-chart');
+  const hc = document.getElementById('hour-chart');
+  const wc = document.getElementById('week-chart');
+  if (dc.style.display !== 'none' && _cachedEntries.length) drawDailyChart(dc, dt, dailyGoal);
+  if (hc.style.display !== 'none' && _cachedEntries.length) {
+    const synced = _cachedEntries.filter(e => e.ts && !isNaN(new Date(e.ts).getTime()));
+    const { bands, labels } = aggregateByHourBand(synced);
+    drawHourChart(hc, bands, labels);
+  }
+  if (wc.style.display !== 'none' && _cachedEntries.length) {
+    const { avgs, labels } = aggregateByWeekday(dt, curYear, curMonth);
+    drawWeekChart(wc, avgs, labels, dailyGoal);
+  }
+  if (hmapCanvas._hm) drawHeatmap(hmapCanvas._hm.year, hmapCanvas._hm.dt);
 });
 </script>
 </body>

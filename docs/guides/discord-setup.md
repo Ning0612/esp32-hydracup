@@ -2,6 +2,14 @@
 
 設定後，HydraCup 將自動發送三種通知至指定的 Discord 頻道：上線通知、飲水通知、每日摘要。
 
+HydraCup 對 Discord Webhook 使用憑證鏈驗證，不會在 TLS 失敗時降級為未驗證連線。內嵌的
+trust anchor 目前是 Google Trust Services `GTS Root R4`（經 `WE1` 簽發的
+`discord.com` 鏈）；Discord 或憑證鏈更新時，需同步更新 `lib/DiscordNotifier/DiscordNotifier.cpp`
+中的 CA，並在裝置上重新燒錄韌體。
+
+裝置會等 NTP 時間同步成功後才送出 Discord 通知；若關閉 NTP 或同步失敗，通知會略過，
+避免在 RTC 時間不可信時誤判 TLS 憑證有效期。
+
 ---
 
 ## 步驟 1：建立 Discord Webhook
@@ -31,8 +39,15 @@ https://discord.com/api/webhooks/1234567890/abcdefghijklmnopqrstuvwxyz0123456789
 
 ### 透過 API
 
+API 需要已登入的 session cookie 與 `X-CSRF-Token`；首次使用請先透過 Web UI
+設定管理密碼並登入，再從瀏覽器開發者工具複製請求，或依序呼叫
+`GET /api/auth/csrf`、`POST /api/auth/login` 取得 token 與 cookie。
+
 ```bash
-curl -X POST -H "Content-Type: application/json" \
+curl -b cookies.txt -X POST \
+  -H "Content-Type: application/json" \
+  -H "Cookie: session=<session-token>" \
+  -H "X-CSRF-Token: <session-csrf-token>" \
   -d '{"discordWebhookUrl": "https://discord.com/api/webhooks/..."}' \
   http://192.168.1.100/api/config
 ```
@@ -64,25 +79,20 @@ https://discord.com/api/webhooks/1234567890/****
 ### 上線通知
 
 ```
-🟢 HydraCup Online
-IP: 192.168.1.100
+✅ HydraCup 已上線
+WebUI: http://192.168.1.100
 ```
 
 ### 飲水通知
 
 ```
-💧 Drink Detected
-Amount: 230 ml
-Today Total: 920 ml / 2000 ml (46%)
+💧 本次 +230 ml（今日 920/2000 ml）
 ```
 
 ### 每日摘要（午夜 00:00）
 
-```
-📊 Daily Summary
-Total: 1850 ml / 2000 ml (92.5%)
-Drinks: 8 times
-```
+每日摘要使用 Discord L2 embed，包含日期、進度條、達成率、今日攝取、今日目標、
+完成度、飲水次數、平均每次與剩餘／超標量等欄位。
 
 ---
 
