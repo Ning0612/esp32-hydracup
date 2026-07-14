@@ -260,6 +260,7 @@ button.ghost:hover { background: var(--teal); color: var(--on-dark); }
 .chart-wrap canvas, canvas { display: block; background: var(--inset); border: 1px solid var(--line); }
 .chart-wrap canvas { max-width: 100%; }
 .hmap-wrap { overflow-x: auto; padding-bottom: .3rem; }
+.hmap-wrap canvas { margin: 0 auto; }
 .hmap-wrap canvas { max-width: none; }
 .empty-state { padding: 2rem 1rem; color: var(--muted); text-align: center; font: 400 .82rem Consolas, monospace; }
 

@@ -192,8 +192,22 @@ hydraFetch('/api/config').then(r => r.json()).then(d => {
 
 // ─── Heatmap ───────────────────────────────────────────────────────────────
 
-const HM = { CELL: 12, GAP: 2, LW: 22, LH: 18 };
-HM.STEP = HM.CELL + HM.GAP;
+const HM = { MIN_CELL: 10, MAX_CELL: 22, GAP: 2, LW: 22, LH: 18 };
+
+function heatmapMetrics(nWeeks) {
+  const wrap = document.getElementById('hmap-wrap');
+  const available = Math.max(0, wrap.clientWidth - 4);
+  const fixedWidth = HM.LW + 4 + (nWeeks - 1) * HM.GAP;
+  const cell = Math.max(HM.MIN_CELL, Math.min(HM.MAX_CELL,
+    (available - fixedWidth) / nWeeks));
+  return {
+    CELL: cell,
+    GAP: HM.GAP,
+    STEP: cell + HM.GAP,
+    LW: HM.LW,
+    LH: HM.LH
+  };
+}
 
 async function loadYearHeatmap(year) {
   const seq = ++_hmapFetchSeq;
@@ -242,19 +256,19 @@ function drawHeatmap(year, dt) {
   document.getElementById('hmap-loading').style.display = 'none';
   document.getElementById('hmap-wrap').style.display   = '';
 
-  const { CELL, GAP, STEP, LW, LH } = HM;
   const isLeap = year % 400 === 0 || (year % 4 === 0 && year % 100 !== 0);
   const nDays  = isLeap ? 366 : 365;
   const jan1   = new Date(year, 0, 1);
   const startWd = (jan1.getDay() + 6) % 7;  // Mon-first: 0=Mon,6=Sun
   const nWeeks  = Math.ceil((startWd + nDays) / 7);
+  const { CELL, STEP, LW, LH } = heatmapMetrics(nWeeks);
 
   const canvas = document.getElementById('hmap-canvas');
   const r  = window.devicePixelRatio || 1;
   const cw = LW + nWeeks * STEP + 4;
   const ch = LH + 7 * STEP;
-  canvas.width  = cw * r;
-  canvas.height = ch * r;
+  canvas.width  = Math.round(cw * r);
+  canvas.height = Math.round(ch * r);
   canvas.style.width  = cw + 'px';
   canvas.style.height = ch + 'px';
   const ctx = canvas.getContext('2d');
@@ -779,6 +793,16 @@ window.addEventListener('hydra-theme-change', () => {
     drawWeekChart(wc, avgs, labels, dailyGoal);
   }
   if (hmapCanvas._hm) drawHeatmap(hmapCanvas._hm.year, hmapCanvas._hm.dt);
+});
+
+let _hmapResizeTimer;
+window.addEventListener('resize', () => {
+  clearTimeout(_hmapResizeTimer);
+  _hmapResizeTimer = setTimeout(() => {
+    const wrap = document.getElementById('hmap-wrap');
+    if (hmapCanvas._hm && wrap.style.display !== 'none')
+      drawHeatmap(hmapCanvas._hm.year, hmapCanvas._hm.dt);
+  }, 100);
 });
 </script>
 </body>
