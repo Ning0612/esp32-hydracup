@@ -218,7 +218,6 @@ static void runControlIteration() {
 }
 
 static void controlTask(void*) {
-    runtimeCoordinator.setControlRunning(true);
     TickType_t lastWake = xTaskGetTickCount();
     for (;;) {
         runControlIteration();
@@ -348,11 +347,16 @@ void setup() {
         buzzerController.play(BeepPattern::AP_MODE);
     }
 
-    if (runtimeReady &&
-        xTaskCreatePinnedToCore(controlTask, "hydracup_control", 8192, nullptr, 3,
-                                &s_controlTaskHandle, ARDUINO_RUNNING_CORE) != pdPASS) {
-        Serial.println("[ERROR] RTOS control task creation failed; degraded loop control active (tare/calibrate unavailable)");
-        s_controlTaskHandle = nullptr;
+    if (runtimeReady) {
+        // Claim the control domain before creating the task so loop() cannot
+        // run a second control iteration during the task hand-off window.
+        runtimeCoordinator.setControlRunning(true);
+        if (xTaskCreatePinnedToCore(controlTask, "hydracup_control", 8192, nullptr, 3,
+                                    &s_controlTaskHandle, ARDUINO_RUNNING_CORE) != pdPASS) {
+            runtimeCoordinator.setControlRunning(false);
+            Serial.println("[ERROR] RTOS control task creation failed; degraded loop control active (tare/calibrate unavailable)");
+            s_controlTaskHandle = nullptr;
+        }
     }
 
     Serial.println("[INFO] Boot complete");

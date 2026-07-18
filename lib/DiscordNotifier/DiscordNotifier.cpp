@@ -263,9 +263,10 @@ void DiscordNotifier::_send(TaskParam* p) {
                 if (code >= 200 && code < 300) {
                     ok = true;
                 } else if (code == 408 || code == 429 || code >= 500) {
-                    // Transient HTTP response: request timeout, rate-limited, or server error
-                    Serial.printf("[Discord] POST HTTP %d (retryable)\n", code);
-                    retryable = true;
+                    // A response proves the request reached the server. Do not
+                    // replay the body: Discord webhooks have no idempotency key.
+                    Serial.printf("[Discord] POST HTTP %d (not retrying; request may have been accepted)\n",
+                                  code);
                 } else if (code < 0) {
                     // Do not retry transport errors: the webhook may have received the body already.
                     Serial.printf("[Discord] POST transport error %d (%s); not retrying to avoid duplicate sends\n",

@@ -31,6 +31,7 @@ private:
     String _pendingSettledKey;
     QueueHandle_t _markerQueue = nullptr;
     TaskHandle_t _markerTask = nullptr;
+    std::atomic<bool> _updateBusy{false};
     std::atomic<bool> _markerDone{false};
     std::atomic<bool> _markerOk{false};
 

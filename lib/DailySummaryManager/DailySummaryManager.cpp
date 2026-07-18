@@ -30,6 +30,17 @@ void DailySummaryManager::init(DiscordNotifier& discord, DrinkDetector& detector
 }
 
 void DailySummaryManager::update() {
+    bool expected = false;
+    if (!_updateBusy.compare_exchange_strong(expected, true,
+                                              std::memory_order_acquire,
+                                              std::memory_order_relaxed)) {
+        return;
+    }
+    struct UpdateRelease {
+        std::atomic<bool>& busy;
+        ~UpdateRelease() { busy.store(false, std::memory_order_release); }
+    } release{_updateBusy};
+
     if (!_discord || !_detector || !_time || !_cfg) return;
     if (!_time->isSynced()) return;
     if (!_detector->isPersistenceReady()) return;
