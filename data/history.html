@@ -16,7 +16,7 @@
 <link rel="icon" type="image/svg+xml" href="/favicon.svg">
 <link rel="stylesheet" href="/style.css">
 </head>
-<body>
+<body class="history-page">
 <header class="topbar"><div class="topbar-in">
   <a class="brand" href="/"><span class="brand-mark">HC</span><span class="brand-copy">HYDRACUP<span class="brand-sub">LOCAL DEVICE / WATER TRACKER</span></span></a>
   <div class="topbar-actions">
@@ -25,785 +25,580 @@
     <button class="nav-logout" type="button" data-logout>登出</button>
   </div>
 </div></header>
+
 <main class="wrap">
-  <div class="intro"><div><div class="kicker">02 / history</div><h1>飲水歷史</h1></div><p>從年度節奏到單次事件，查看 HydraCup 記錄下來的飲水習慣與空窗。</p></div>
-
-  <!-- 年度熱力圖 -->
-  <div class="card">
-    <div class="hmap-header">
-      <div class="label">年度飲水熱力圖</div>
-      <div style="display:flex;align-items:center;gap:6px">
-        <button class="hmap-yr-btn" id="yr-prev" aria-label="查看上一年">&#8249;</button>
-        <span class="hmap-yr-label" id="yr-label"></span>
-        <button class="hmap-yr-btn" id="yr-next" aria-label="查看下一年">&#8250;</button>
-      </div>
-    </div>
-    <div id="hmap-loading" class="sub" style="text-align:center;padding:24px 0">載入中…</div>
-    <div id="hmap-wrap" class="hmap-wrap" style="display:none">
-      <canvas id="hmap-canvas" aria-label="年度每日飲水量熱力圖"></canvas>
-    </div>
-    <div id="hmap-tip" class="hmap-tip" aria-live="polite"></div>
-    <div class="hmap-legend">
-      <span>少</span>
-      <canvas id="hmap-lgd" height="12" aria-label="飲水量圖例"></canvas>
-      <span>多（≥目標）</span>
-    </div>
+  <div class="intro">
+    <div><div class="kicker">02 / history analytics</div><h1>飲水歷史</h1></div>
+    <p>從單日進度到年度節奏，查看 HydraCup 記錄下來的飲水量、達標與空窗。</p>
   </div>
 
-  <!-- 月份導航 -->
-  <div class="month-nav">
-    <button id="btn-prev" aria-label="查看上一個月">&#8249;</button>
-    <span class="month-label" id="month-label">--</span>
-    <button id="btn-next" aria-label="查看下一個月">&#8250;</button>
-  </div>
+  <div class="message error" id="history-error" role="alert" aria-live="polite"></div>
+  <section class="status-banner history-status" id="history-status" aria-live="polite">
+    <div><div class="status-label">HISTORY DATA STATUS</div><div class="status-value" id="history-status-value">讀取中…</div></div>
+    <div class="updated">最後更新<br><strong id="history-updated">--</strong></div>
+  </section>
 
-  <!-- 每日飲水量 -->
-  <div class="card">
-    <div class="label" style="margin-bottom:10px">每日飲水量</div>
-    <div class="chart-wrap"><canvas id="daily-chart" height="180" aria-label="本月每日飲水量圖表"></canvas></div>
-    <div id="daily-empty" class="empty-state" style="display:none">本月無飲水記錄</div>
-  </div>
+  <section class="card history-card">
+    <h2><span>01</span>月份總覽</h2>
+    <div class="history-period-controls" role="group" aria-label="月份切換">
+      <button type="button" class="ghost" id="btn-prev" aria-label="查看上一個月">上一個月</button>
+      <span class="history-period" id="month-label" aria-live="polite">--</span>
+      <button type="button" class="ghost" id="btn-next" aria-label="查看下一個月">下一個月</button>
+    </div>
+    <div class="metric-grid history-metric-grid">
+      <div class="metric"><label>本月總量</label><span id="s-total">--</span></div>
+      <div class="metric"><label>達標天數</label><span id="s-days">--</span><small>有記錄天數</small></div>
+      <div class="metric"><label>平均每日</label><span id="s-avg">--</span></div>
+      <div class="metric"><label>最高單日</label><span id="s-max">--</span></div>
+      <div class="metric"><label>連續達標</label><span id="s-streak">--</span><small>最長天數</small></div>
+      <div class="metric"><label>平均每次</label><span id="s-per">--</span></div>
+    </div>
+    <p class="info">每日目標目前設定為 <strong id="goal-note">--</strong>；達標天數只計入有飲水記錄的日子。</p>
+  </section>
 
-  <!-- 月統計摘要（6 格） -->
-  <div class="stats-grid">
-    <div class="stat-cell">
-      <div class="label">本月總量</div>
-      <div class="num-lg" id="s-total">--</div>
+  <section class="card history-card">
+    <h2><span>02</span>深度分析</h2>
+    <div class="metric-grid history-metric-grid history-analysis-grid">
+      <div class="metric"><label>最活躍時段</label><span id="a-peak">--</span></div>
+      <div class="metric"><label>本月次數</label><span id="a-count">--</span></div>
+      <div class="metric"><label>最長空窗</label><span id="a-gap">--</span></div>
+      <div class="metric"><label>最活躍日</label><span id="a-day">--</span></div>
     </div>
-    <div class="stat-cell">
-      <div class="label">達標天數</div>
-      <div class="num-lg" id="s-days">--</div>
-      <div class="sub">有記錄天數</div>
-    </div>
-    <div class="stat-cell">
-      <div class="label">平均每日</div>
-      <div class="num-lg" id="s-avg">--</div>
-    </div>
-    <div class="stat-cell">
-      <div class="label">最高單日</div>
-      <div class="num-lg" id="s-max">--</div>
-    </div>
-    <div class="stat-cell">
-      <div class="label">連續達標</div>
-      <div class="num-lg" id="s-streak">--</div>
-      <div class="sub">最長天數</div>
-    </div>
-    <div class="stat-cell">
-      <div class="label">平均每次</div>
-      <div class="num-lg" id="s-per">--</div>
-    </div>
-  </div>
+  </section>
 
-  <!-- 深度分析 -->
-  <div class="card">
-    <div class="label" style="margin-bottom:12px">深度分析</div>
-    <div class="stats-grid">
-      <div class="stat-cell">
-        <div class="label">最活躍時段</div>
-        <div class="num-sm" id="a-peak">--</div>
-      </div>
-      <div class="stat-cell">
-        <div class="label">本月次數</div>
-        <div class="num-sm" id="a-count">--</div>
-      </div>
-      <div class="stat-cell">
-        <div class="label">最長空窗</div>
-        <div class="num-sm" id="a-gap">--</div>
-      </div>
-      <div class="stat-cell">
-        <div class="label">最活躍日</div>
-        <div class="num-sm" id="a-day">--</div>
-      </div>
-    </div>
-  </div>
-
-  <!-- 時段分布 -->
-  <div class="card">
-    <div class="label" style="margin-bottom:10px">時段分布（飲水次數）</div>
-    <div class="chart-wrap"><canvas id="hour-chart" height="120" aria-label="本月時段飲水次數圖表"></canvas></div>
+  <section class="card history-card">
+    <h2><span>03</span>時段分布</h2>
+    <div class="legend-row"><span><i class="key on"></i>飲水次數</span><span>每 4 小時一段</span></div>
+    <div class="chart-wrap"><canvas id="hour-chart" height="150" aria-label="本月時段飲水次數圖表"></canvas></div>
     <div id="hour-empty" class="empty-state" style="display:none">無時間同步記錄</div>
-  </div>
+  </section>
 
-  <!-- 週別飲水量 -->
-  <div class="card">
-    <div class="label" style="margin-bottom:10px">週別飲水量（日平均）</div>
-    <div class="chart-wrap"><canvas id="week-chart" height="140" aria-label="本月星期飲水量圖表"></canvas></div>
-    <div id="week-empty" class="empty-state" style="display:none">本月無飲水記錄</div>
-  </div>
+  <section class="card history-card">
+    <h2><span>04</span>本月每日飲水量</h2>
+    <div class="legend-row"><span><i class="key on"></i>有飲水記錄</span><span>虛線代表每日目標</span></div>
+    <div class="chart-wrap"><canvas id="daily-chart" height="230" aria-label="本月每日飲水量圖表"></canvas></div>
+    <div id="daily-empty" class="empty-state" style="display:none">本月無飲水記錄</div>
+  </section>
 
-  <!-- 詳細記錄（預設收合） -->
-  <div class="card">
-    <button class="log-toggle" id="log-toggle" aria-expanded="false" aria-controls="log-section" onclick="toggleLog()">
-      ▶ 詳細記錄 <span id="log-count"></span>
-    </button>
-    <div id="log-section" style="display:none;margin-top:10px">
-      <div class="page-size-row">
-        每頁
-        <button class="ps-btn active" data-ps="10" onclick="setPageSize(10)">10</button>
-        <button class="ps-btn" data-ps="20" onclick="setPageSize(20)">20</button>
-        <button class="ps-btn" data-ps="50" onclick="setPageSize(50)">50</button>
-        筆
-      </div>
-      <div id="log-empty" class="empty-state" style="display:none">本月無飲水記錄</div>
-      <div style="overflow-x:auto">
-        <table class="log-table" id="log-table" style="display:none">
-          <thead><tr>
-            <th>時間</th><th>飲水量</th><th>當日累計</th>
-          </tr></thead>
-          <tbody id="log-body"></tbody>
-        </table>
-      </div>
-      <div class="pagination" id="pagination" style="display:none">
-         <button id="pg-prev" aria-label="查看上一頁記錄" onclick="goPage(-1)">&#8249;</button>
-        <span id="pg-info"></span>
-         <button id="pg-next" aria-label="查看下一頁記錄" onclick="goPage(1)">&#8250;</button>
-      </div>
+  <section class="card history-card">
+    <h2><span>05</span>年度飲水熱力圖</h2>
+    <div class="heatmap-controls" id="heatmap-controls" role="group" aria-label="熱力圖年份切換">
+      <button type="button" class="ghost" id="heatmap-prev" aria-label="較早年份">&lt;</button>
+      <span class="heatmap-period" id="heatmap-period" aria-live="polite">最近 365 天</span>
+      <button type="button" class="ghost" id="heatmap-next" aria-label="較新年份">&gt;</button>
     </div>
-  </div>
+    <div id="heatmap-loading" class="sub history-loading">載入中…</div>
+    <div id="heatmap-message" class="history-note" role="status" aria-live="polite" style="display:none"></div>
+    <div class="heatmap-wrap" id="heatmap-wrap" style="display:none">
+      <canvas id="year-heatmap" class="heatmap-canvas" width="900" height="154" aria-label="最近 365 天每日飲水量熱力圖"></canvas>
+      <div class="heatmap-legend" aria-hidden="true"><span>少</span><i class="key heat-0"></i><i class="key heat-1"></i><i class="key heat-2"></i><i class="key heat-3"></i><i class="key heat-4"></i><span>多</span></div>
+    </div>
+    <p class="info">每個色塊代表一天；顏色越深，當天飲水量越高。灰色代表尚無資料。</p>
+  </section>
+
+  <section class="card history-card">
+    <h2><span>06</span>週別飲水量</h2>
+    <div class="legend-row"><span><i class="key on"></i>有記錄日平均</span><span>虛線代表每日目標</span></div>
+    <div class="chart-wrap"><canvas id="week-chart" height="160" aria-label="本月星期飲水量圖表"></canvas></div>
+    <div id="week-empty" class="empty-state" style="display:none">本月無飲水記錄</div>
+  </section>
+
+  <section class="card history-card">
+    <h2><span>07</span>每日統計</h2>
+    <div id="daily-table-empty" class="empty-state" style="display:none">本月無飲水記錄</div>
+    <div class="table-wrap" id="daily-table-wrap">
+      <table class="history-table" id="daily-table">
+        <thead><tr><th>日期</th><th>飲水量</th><th>達標</th><th>飲水次數</th></tr></thead>
+        <tbody id="daily-body" aria-live="polite"></tbody>
+      </table>
+    </div>
+    <div class="pagination history-pagination" id="daily-pagination">
+      <button type="button" class="ghost" id="daily-prev">上一頁</button>
+      <span id="daily-page-label">第 1 / 1 頁</span>
+      <button type="button" class="ghost" id="daily-next">下一頁</button>
+    </div>
+  </section>
+
+  <section class="card history-card">
+    <h2><span>08</span>最近飲水記錄 <small id="log-count"></small></h2>
+    <div class="page-size-row">
+      每頁
+      <button type="button" class="ps-btn active" data-ps="10">10</button>
+      <button type="button" class="ps-btn" data-ps="20">20</button>
+      <button type="button" class="ps-btn" data-ps="50">50</button>
+      筆
+    </div>
+    <div id="log-empty" class="empty-state" style="display:none">本月無飲水記錄</div>
+    <div class="table-wrap" id="log-table-wrap">
+      <table class="history-table" id="log-table">
+        <thead><tr><th>時間</th><th>飲水量</th><th>當日累計</th></tr></thead>
+        <tbody id="log-body" aria-live="polite"></tbody>
+      </table>
+    </div>
+    <div class="pagination history-pagination" id="log-pagination">
+      <button type="button" class="ghost" id="log-prev">上一頁</button>
+      <span id="log-page-label">第 1 / 1 頁</span>
+      <button type="button" class="ghost" id="log-next">下一頁</button>
+    </div>
+  </section>
 </main>
 
 <footer class="site-footer"><div class="footer-in">
   <div class="footer-repo"><span class="label">SOURCE</span><a href="https://github.com/Ning0612/esp32-hydracup">Ning0612/esp32-hydracup</a></div>
   <div class="footer-meta">Vanilla HTML／CSS／JS · ESP32 local device · MIT License</div>
 </div></footer>
+<div id="history-tip" role="status" aria-live="polite"></div>
 
 <script src="/ui.js"></script>
 <script>
 const now = new Date();
-let curYear   = now.getFullYear();
-let curMonth  = now.getMonth() + 1;
+let curYear = now.getFullYear();
+let curMonth = now.getMonth() + 1;
 let dailyGoal = 2000;
+let cachedEntries = [];
+let fetchSeq = 0;
+let logSorted = [];
+let logPage = 1;
+let logPageSize = 10;
+let dailyRows = [];
+let dailyPage = 1;
+let heatmapYear = null;
+let heatmapCache = { recent: null, years: {} };
+let heatmapFetchSeq = 0;
+let heatmapLoading = false;
+let heatmapInflight = {};
+let heatmapCells = [];
+let chartHits = { daily: [], hour: [], week: [] };
 
-// Heatmap state
-let curHmapYear  = now.getFullYear();
-let _hmapCache   = {};   // year -> dayTotals[]
-let _hmapFetchSeq = 0;
-
-// Month log state
-let _cachedEntries = [];
-let _logSorted = [], _logPage = 1, _logPageSize = 10, _logExpanded = false;
-let _fetchSeq = 0;
-
-hydraFetch('/api/config').then(r => r.json()).then(d => {
-  if (d.ok && d.dailyGoalMl > 0 && d.dailyGoalMl < 50000) dailyGoal = d.dailyGoalMl;
-  render();
-  loadYearHeatmap(curHmapYear);
-}).catch(() => { render(); loadYearHeatmap(curHmapYear); });
-
-// ─── Heatmap ───────────────────────────────────────────────────────────────
-
-const HM = { MIN_CELL: 10, MAX_CELL: 22, GAP: 2, LW: 22, LH: 18 };
-
-function heatmapMetrics(nWeeks) {
-  const wrap = document.getElementById('hmap-wrap');
-  const available = Math.max(0, wrap.clientWidth - 4);
-  const fixedWidth = HM.LW + 4 + (nWeeks - 1) * HM.GAP;
-  const cell = Math.max(HM.MIN_CELL, Math.min(HM.MAX_CELL,
-    (available - fixedWidth) / nWeeks));
-  return {
-    CELL: cell,
-    GAP: HM.GAP,
-    STEP: cell + HM.GAP,
-    LW: HM.LW,
-    LH: HM.LH
-  };
-}
-
-async function loadYearHeatmap(year) {
-  const seq = ++_hmapFetchSeq;
-  document.getElementById('yr-label').textContent = year;
-  document.getElementById('yr-next').disabled = year >= now.getFullYear();
-
-  if (_hmapCache[year]) { drawHeatmap(year, _hmapCache[year]); return; }
-
-  document.getElementById('hmap-loading').style.display = '';
-  document.getElementById('hmap-wrap').style.display = 'none';
-
-  const curY = now.getFullYear(), curM = now.getMonth() + 1;
-  const months = [];
-  for (let m = 1; m <= 12; m++)
-    if (year < curY || m <= curM) months.push(String(m).padStart(2, '0'));
-
-  const results = await Promise.allSettled(
-    months.map(m => hydraFetch('/api/logs?month=' + year + '-' + m).then(r => r.json()))
-  );
-  if (seq !== _hmapFetchSeq) return;
-
-  const isLeap  = year % 400 === 0 || (year % 4 === 0 && year % 100 !== 0);
-  const nDays   = isLeap ? 366 : 365;
-  const jan1    = new Date(year, 0, 1);
-  const dt      = new Array(nDays).fill(0);
-
-  for (const r of results) {
-    if (r.status !== 'fulfilled' || !r.value.ok) continue;
-    for (const e of (r.value.entries || [])) {
-      // Extract YYYY-MM-DD from the device's local ISO string to avoid browser timezone skew
-      const dm = e.ts && e.ts.match(/^(\d{4})-(\d{2})-(\d{2})/);
-      if (!dm) continue;
-      const ey = +dm[1], em = +dm[2], ed = +dm[3];
-      if (ey !== year) continue;
-      const idx = Math.round((new Date(year, em - 1, ed) - jan1) / 86400000);
-      if (idx >= 0 && idx < nDays && e.total > dt[idx]) dt[idx] = e.total;
-    }
-  }
-
-  // Only cache past years; current year may gain new entries while page stays open
-  if (year < now.getFullYear()) _hmapCache[year] = dt;
-  drawHeatmap(year, dt);
-}
-
-function drawHeatmap(year, dt) {
-  document.getElementById('hmap-loading').style.display = 'none';
-  document.getElementById('hmap-wrap').style.display   = '';
-
-  const isLeap = year % 400 === 0 || (year % 4 === 0 && year % 100 !== 0);
-  const nDays  = isLeap ? 366 : 365;
-  const jan1   = new Date(year, 0, 1);
-  const startWd = (jan1.getDay() + 6) % 7;  // Mon-first: 0=Mon,6=Sun
-  const nWeeks  = Math.ceil((startWd + nDays) / 7);
-  const { CELL, STEP, LW, LH } = heatmapMetrics(nWeeks);
-
-  const canvas = document.getElementById('hmap-canvas');
-  const r  = window.devicePixelRatio || 1;
-  const cw = LW + nWeeks * STEP + 4;
-  const ch = LH + 7 * STEP;
-  canvas.width  = Math.round(cw * r);
-  canvas.height = Math.round(ch * r);
-  canvas.style.width  = cw + 'px';
-  canvas.style.height = ch + 'px';
-  const ctx = canvas.getContext('2d');
-  ctx.scale(r, r);
-  ctx.clearRect(0, 0, cw, ch);
-  const colors = chartColors();
-
-  // Month labels
-  const MONTHS = ['1月','2月','3月','4月','5月','6月','7月','8月','9月','10月','11月','12月'];
-  ctx.font = '9px Consolas, monospace';
-  ctx.fillStyle = colors.muted;
-  ctx.textAlign = 'left';
-  let lastCol = -1;
-  for (let m = 0; m < 12; m++) {
-    const doy = Math.round((new Date(year, m, 1) - jan1) / 86400000);
-    const col = Math.floor((startWd + doy) / 7);
-    if (col !== lastCol) { ctx.fillText(MONTHS[m], LW + col * STEP, 12); lastCol = col; }
-  }
-
-  // Day-of-week labels (Mon / Wed / Fri)
-  const WD = ['一','二','三','四','五','六','日'];
-  ctx.textAlign = 'right';
-  [0, 2, 4].forEach(row => {
-    ctx.fillText(WD[row], LW - 3, LH + row * STEP + CELL - 1);
-  });
-
-  // Cells
-  for (let d = 0; d < nDays; d++) {
-    const grid = startWd + d;
-    const col  = Math.floor(grid / 7);
-    const row  = grid % 7;
-    const x    = LW + col * STEP;
-    const y    = LH + row * STEP;
-    const tot  = dt[d] || 0;
-
-    const pct = dailyGoal > 0 ? tot / dailyGoal : 0;
-    ctx.fillStyle = tot <= 0 ? colors.surface2 : colors.teal;
-    ctx.globalAlpha = tot <= 0 ? 1 : tot >= dailyGoal ? 1 :
-      (pct < 0.25 ? .24 : pct < 0.50 ? .42 : pct < 0.75 ? .66 : .86);
-    ctx.beginPath();
-    ctx.rect(x, y, CELL, CELL);
-    ctx.fill();
-    ctx.globalAlpha = 1;
-  }
-
-  // Store meta for tooltip
-  canvas._hm = { startWd, nDays, year, LW, LH, STEP, CELL, dt };
-
-  drawHmapLegend();
-}
-
-function drawHmapLegend() {
-  const c = document.getElementById('hmap-lgd');
-  const r = window.devicePixelRatio || 1;
-  const w = 90, h = 12;
-  c.width = w * r; c.height = h * r;
-  c.style.width = w + 'px'; c.style.height = h + 'px';
-  const ctx = c.getContext('2d');
-  ctx.scale(r, r);
-  const colors = chartColors();
-  const cols = [
-    { color: colors.surface2, alpha: 1 },
-    { color: colors.teal, alpha: .24 },
-    { color: colors.teal, alpha: .42 },
-    { color: colors.teal, alpha: .66 },
-    { color: colors.teal, alpha: 1 }
-  ];
-  const cw = 14;
-  cols.forEach((col, i) => {
-    ctx.fillStyle = col.color;
-    ctx.globalAlpha = col.alpha;
-    ctx.beginPath();
-    ctx.rect(i * (cw + 2), 0, cw, h);
-    ctx.fill();
-    ctx.globalAlpha = 1;
-  });
-}
-
-function handleHmapPointer(canvas, clientX, clientY) {
-  const meta = canvas._hm;
-  if (!meta) return;
-  const rect = canvas.getBoundingClientRect();
-  const mx = clientX - rect.left;
-  const my = clientY - rect.top;
-  const col = Math.floor((mx - meta.LW) / meta.STEP);
-  const row = Math.floor((my - meta.LH) / meta.STEP);
-  if (col < 0 || row < 0 || row >= 7) { clearHmapTip(); return; }
-  const d = col * 7 + row - meta.startWd;
-  if (d < 0 || d >= meta.nDays) { clearHmapTip(); return; }
-  const date  = new Date(meta.year, 0, 1 + d);
-  const total = meta.dt[d] || 0;
-  document.getElementById('hmap-tip').textContent =
-    (date.getMonth()+1) + '月' + date.getDate() + '日：' +
-    (total > 0 ? Math.round(total) + ' ml' : '無記錄');
-}
-
-function clearHmapTip() { document.getElementById('hmap-tip').textContent = ''; }
-
-const hmapCanvas = document.getElementById('hmap-canvas');
-hmapCanvas.addEventListener('mousemove', function(e) { handleHmapPointer(this, e.clientX, e.clientY); });
-hmapCanvas.addEventListener('mouseleave', clearHmapTip);
-hmapCanvas.addEventListener('touchstart', function(e) {
-  handleHmapPointer(this, e.touches[0].clientX, e.touches[0].clientY);
-}, { passive: true });
-hmapCanvas.addEventListener('touchend', clearHmapTip);
-
-document.getElementById('yr-prev').addEventListener('click', () => {
-  curHmapYear--;
-  document.getElementById('yr-next').disabled = false;
-  loadYearHeatmap(curHmapYear);
-});
-document.getElementById('yr-next').addEventListener('click', () => {
-  if (curHmapYear >= now.getFullYear()) return;
-  curHmapYear++;
-  loadYearHeatmap(curHmapYear);
-});
-
-// ─── Helpers ───────────────────────────────────────────────────────────────
-
+function el(id) { return document.getElementById(id); }
 function monthStr(y, m) { return y + '-' + String(m).padStart(2, '0'); }
 function daysInMonth(y, m) { return new Date(y, m, 0).getDate(); }
+function pad2(n) { return String(n).padStart(2, '0'); }
+function dateKey(y, m, d) { return y + pad2(m) + pad2(d); }
+function dateKeyFromDate(d) { return dateKey(d.getFullYear(), d.getMonth() + 1, d.getDate()); }
+function dateKeyFromTs(ts) {
+  const match = String(ts || '').match(/^(\d{4})-(\d{2})-(\d{2})/);
+  return match ? match[1] + match[2] + match[3] : '';
+}
+function deviceHour(ts) {
+  const match = String(ts || '').match(/T(\d{2})/);
+  return match ? Number(match[1]) : -1;
+}
+function dateText(key) {
+  return /^\d{8}$/.test(String(key || '')) ? key.slice(0, 4) + '-' + key.slice(4, 6) + '-' + key.slice(6, 8) : '--';
+}
+function monthDayText(key) {
+  return /^\d{8}$/.test(String(key || '')) ? key.slice(4, 6) + '/' + key.slice(6, 8) : '--';
+}
 function fmtTs(ts) {
   if (!ts) return '時間未同步';
   const d = new Date(ts);
   if (isNaN(d.getTime())) return '時間未同步';
-  return (d.getMonth()+1) + '/' + d.getDate() + ' ' +
-    String(d.getHours()).padStart(2,'0') + ':' + String(d.getMinutes()).padStart(2,'0');
+  return (d.getMonth() + 1) + '/' + d.getDate() + ' ' + pad2(d.getHours()) + ':' + pad2(d.getMinutes());
 }
-function tsMs(e) { const t = e.ts ? new Date(e.ts).getTime() : NaN; return isNaN(t) ? 0 : t; }
+function tsMs(e) {
+  const t = e && e.ts ? new Date(e.ts).getTime() : NaN;
+  return isNaN(t) ? 0 : t;
+}
+function setText(id, value) { el(id).textContent = value; }
+function chartColors() {
+  const styles = getComputedStyle(document.documentElement);
+  return {
+    surface: styles.getPropertyValue('--inset').trim(),
+    surface2: styles.getPropertyValue('--surface-2').trim(),
+    teal: styles.getPropertyValue('--teal').trim(),
+    tealDark: styles.getPropertyValue('--teal-dark').trim(),
+    muted: styles.getPropertyValue('--muted').trim(),
+    ink: styles.getPropertyValue('--ink').trim(),
+    line: styles.getPropertyValue('--line').trim()
+  };
+}
+
+function setHistoryStatus(value, offline) {
+  el('history-status').className = 'status-banner history-status' + (offline ? ' state-off' : '');
+  setText('history-status-value', value);
+  if (!offline) setText('history-updated', new Date().toLocaleTimeString('zh-TW', { hour12: false }));
+}
 
 function aggregateByDay(entries, y, m) {
   const totals = new Array(daysInMonth(y, m)).fill(0);
-  for (const e of entries) {
-    if (!e.ts) continue;
-    const d = new Date(e.ts);
-    if (isNaN(d.getTime())) continue;
-    if (d.getFullYear() !== y || d.getMonth() + 1 !== m) continue;
-    const i = d.getDate() - 1;
-    if (e.total > totals[i]) totals[i] = e.total;
+  for (const entry of entries) {
+    const key = dateKeyFromTs(entry.ts);
+    if (!key || key.slice(0, 4) !== String(y) || Number(key.slice(4, 6)) !== m) continue;
+    const day = Number(key.slice(6, 8)) - 1;
+    if (day >= 0 && day < totals.length && Number(entry.total) > totals[day]) totals[day] = Number(entry.total);
   }
   return totals;
 }
 
+function aggregateDayCounts(entries, y, m) {
+  const counts = new Array(daysInMonth(y, m)).fill(0);
+  for (const entry of entries) {
+    const key = dateKeyFromTs(entry.ts);
+    if (!key || key.slice(0, 4) !== String(y) || Number(key.slice(4, 6)) !== m) continue;
+    const day = Number(key.slice(6, 8)) - 1;
+    if (day >= 0 && day < counts.length) counts[day]++;
+  }
+  return counts;
+}
+
 function aggregateByHourBand(entries) {
-  const bands  = [0, 0, 0, 0, 0, 0];
+  const bands = [0, 0, 0, 0, 0, 0];
   const labels = ['0–4時', '4–8時', '8–12時', '12–16時', '16–20時', '20–24時'];
-  for (const e of entries) {
-    if (!e.ts) continue;
-    const d = new Date(e.ts);
-    if (!isNaN(d.getTime())) bands[Math.floor(d.getHours() / 4)]++;
+  for (const entry of entries) {
+    const hour = deviceHour(entry.ts);
+    if (hour >= 0 && hour < 24) bands[Math.floor(hour / 4)]++;
   }
   return { bands, labels };
 }
 
 function aggregateByWeekday(dailyTotals, y, m) {
-  const wd = Array.from({length: 7}, () => []);
-  for (let i = 0; i < dailyTotals.length; i++)
-    if (dailyTotals[i] > 0) wd[new Date(y, m - 1, i + 1).getDay()].push(dailyTotals[i]);
+  const grouped = Array.from({ length: 7 }, () => []);
+  for (let i = 0; i < dailyTotals.length; i++) {
+    if (dailyTotals[i] > 0) grouped[new Date(y, m - 1, i + 1).getDay()].push(dailyTotals[i]);
+  }
   const order = [1, 2, 3, 4, 5, 6, 0];
-  const avgs  = order.map(i => {
-    const arr = wd[i];
-    return arr.length ? arr.reduce((a, b) => a + b, 0) / arr.length : 0;
-  });
+  const avgs = order.map(index => grouped[index].length ? grouped[index].reduce((a, b) => a + b, 0) / grouped[index].length : 0);
   return { avgs, labels: ['一', '二', '三', '四', '五', '六', '日'] };
 }
 
-function calcMaxStreak(dailyTotals, goal) {
-  let max = 0, cur = 0;
-  for (const v of dailyTotals) { if (v >= goal) { if (++cur > max) max = cur; } else cur = 0; }
+function calcMaxStreak(values, goal) {
+  let max = 0, current = 0;
+  for (const value of values) {
+    if (value >= goal) max = Math.max(max, ++current);
+    else current = 0;
+  }
   return max;
 }
 
 function calcMaxGapHours(entries) {
-  const ts = entries
-    .filter(e => e.ts && !isNaN(new Date(e.ts).getTime()))
-    .map(e => new Date(e.ts).getTime()).sort((a, b) => a - b);
-  if (ts.length < 2) return 0;
+  const times = entries.filter(entry => entry.ts && !isNaN(new Date(entry.ts).getTime())).map(entry => new Date(entry.ts).getTime()).sort((a, b) => a - b);
   let max = 0;
-  for (let i = 1; i < ts.length; i++) max = Math.max(max, ts[i] - ts[i - 1]);
-  return max / 3600000;
+  for (let i = 1; i < times.length; i++) max = Math.max(max, times[i] - times[i - 1]);
+  return times.length > 1 ? max / 3600000 : 0;
 }
 
 function bestDrinkDay(entries) {
   const counts = {};
-  for (const e of entries) {
-    if (!e.ts) continue;
-    const d = new Date(e.ts);
-    if (isNaN(d.getTime())) continue;
-    const k = (d.getMonth()+1) + '/' + d.getDate();
-    counts[k] = (counts[k] || 0) + 1;
+  for (const entry of entries) {
+    const key = dateKeyFromTs(entry.ts);
+    if (key) counts[key] = (counts[key] || 0) + 1;
   }
   let best = '--', max = 0;
-  for (const [k, v] of Object.entries(counts))
-    if (v > max) { max = v; best = k + '（' + v + '次）'; }
+  Object.keys(counts).forEach(key => {
+    if (counts[key] > max) { max = counts[key]; best = monthDayText(key) + '（' + counts[key] + '次）'; }
+  });
   return best;
 }
 
-function chartColors() {
-  const styles = getComputedStyle(document.documentElement);
-  return {
-    surface2: styles.getPropertyValue('--surface-2').trim(),
-    teal: styles.getPropertyValue('--teal').trim(),
-    tealDark: styles.getPropertyValue('--teal-dark').trim(),
-    muted: styles.getPropertyValue('--muted').trim(),
-    line: styles.getPropertyValue('--line').trim()
-  };
-}
-
-// ─── Canvas Charts ──────────────────────────────────────────────────────────
-
-function setupCanvas(canvas) {
+function setupCanvas(canvas, fallbackHeight) {
   const r = window.devicePixelRatio || 1;
   const w = canvas.parentElement.clientWidth || 300;
-  const h = canvas.height || 180;
-  canvas.width  = w * r; canvas.height = h * r;
-  canvas.style.width = w + 'px'; canvas.style.height = h + 'px';
+  const h = Number(canvas.getAttribute('height')) || fallbackHeight;
+  canvas.width = Math.max(1, Math.round(w * r));
+  canvas.height = Math.max(1, Math.round(h * r));
+  canvas.style.width = w + 'px';
+  canvas.style.height = h + 'px';
   const ctx = canvas.getContext('2d');
-  ctx.scale(r, r);
-  return { ctx, w, h: canvas.height / r };
+  ctx.setTransform(r, 0, 0, r, 0, 0);
+  return { ctx, w, h };
 }
 
-function drawDailyChart(canvas, dailyTotals, goal) {
-  const { ctx, w, h } = setupCanvas(canvas);
+function drawDailyChart(canvas, totals, goal) {
+  const { ctx, w, h } = setupCanvas(canvas, 230);
   const colors = chartColors();
-  const pad = { t: 12, r: 8, b: 30, l: 40 };
+  const pad = { t: 28, r: 12, b: 34, l: 44 };
   const cw = w - pad.l - pad.r, ch = h - pad.t - pad.b;
-  const n = dailyTotals.length;
-  const maxVal = Math.max(goal, ...dailyTotals, 1);
-  const barW = Math.max(2, (cw / n) - 2);
-  const gap  = (cw - barW * n) / (n - 1 || 1);
-  ctx.clearRect(0, 0, w, h);
-
-  const gy = pad.t + ch * (1 - goal / maxVal);
-  ctx.strokeStyle = colors.line;
-  ctx.setLineDash([4, 4]); ctx.lineWidth = 1;
-  ctx.beginPath(); ctx.moveTo(pad.l, gy); ctx.lineTo(pad.l + cw, gy); ctx.stroke();
-  ctx.setLineDash([]);
-
-  dailyTotals.forEach((v, i) => {
-    const x  = pad.l + i * (barW + gap);
-    const bh = v > 0 ? Math.max(2, (v / maxVal) * ch) : 2;
-    const y  = pad.t + ch - bh;
-    ctx.fillStyle = v >= goal ? colors.tealDark : v > 0 ? colors.teal : colors.surface2;
-    ctx.globalAlpha = v > 0 ? (v >= goal ? 1 : .75) : 1;
-    ctx.beginPath();
-    ctx.rect(x, y, barW, bh);
-    ctx.fill();
-    ctx.globalAlpha = 1;
+  const maxVal = Math.max(goal, ...totals, 1);
+  const barW = Math.max(3, cw / totals.length - 3);
+  const gap = (cw - barW * totals.length) / Math.max(1, totals.length - 1);
+  chartHits.daily = [];
+  ctx.clearRect(0, 0, w, h); ctx.fillStyle = colors.surface; ctx.fillRect(0, 0, w, h);
+  ctx.fillStyle = colors.ink; ctx.font = '12px Consolas, monospace'; ctx.textAlign = 'left'; ctx.fillText('本月每日飲水量', pad.l, 16);
+  const goalY = pad.t + ch * (1 - goal / maxVal);
+  ctx.strokeStyle = colors.line; ctx.setLineDash([4, 4]); ctx.beginPath(); ctx.moveTo(pad.l, goalY); ctx.lineTo(pad.l + cw, goalY); ctx.stroke(); ctx.setLineDash([]);
+  totals.forEach((value, index) => {
+    const x = pad.l + index * (barW + gap);
+    const bh = value > 0 ? Math.max(2, value / maxVal * ch) : 2;
+    const y = pad.t + ch - bh;
+    ctx.fillStyle = value >= goal ? colors.tealDark : value > 0 ? colors.teal : colors.surface2;
+    ctx.globalAlpha = value > 0 ? (value >= goal ? 1 : .75) : 1;
+    ctx.fillRect(x, y, barW, bh); ctx.globalAlpha = 1;
+    chartHits.daily.push({ x, y, w: barW, h: bh, key: dateKey(curYear, curMonth, index + 1), value });
   });
-
-  ctx.fillStyle = colors.muted;
-  ctx.font = '10px Consolas, monospace';
-  ctx.textAlign = 'center';
-  for (let i = 0; i < n; i++)
-    if (i === 0 || (i + 1) % 5 === 0)
-      ctx.fillText(i + 1, pad.l + i * (barW + gap) + barW / 2, h - pad.b + 14);
-  ctx.textAlign = 'right';
-  [0, 0.5, 1].forEach(f => {
-    const v = Math.round(maxVal * f);
-    ctx.fillText(v >= 1000 ? (v/1000).toFixed(1) + 'k' : v,
-                 pad.l - 4, pad.t + ch * (1 - f) + 3);
-  });
+  ctx.fillStyle = colors.muted; ctx.font = '10px Consolas, monospace'; ctx.textAlign = 'center';
+  totals.forEach((_, index) => { if (index === 0 || (index + 1) % 5 === 0) ctx.fillText(String(index + 1), pad.l + index * (barW + gap) + barW / 2, h - 14); });
+  ctx.textAlign = 'right'; [0, .5, 1].forEach(f => { const value = Math.round(maxVal * f); ctx.fillText(value >= 1000 ? (value / 1000).toFixed(1) + 'k' : String(value), pad.l - 5, pad.t + ch * (1 - f) + 3); });
 }
 
 function drawHourChart(canvas, bands, labels) {
-  const { ctx, w, h } = setupCanvas(canvas);
+  const { ctx, w, h } = setupCanvas(canvas, 150);
   const colors = chartColors();
-  const pad = { t: 8, r: 50, b: 8, l: 62 };
+  const pad = { t: 28, r: 58, b: 12, l: 70 };
   const cw = w - pad.l - pad.r, ch = h - pad.t - pad.b;
-  const n = bands.length, maxVal = Math.max(...bands, 1);
-  const barH = Math.max(2, ch / n - 4), gap = (ch - barH * n) / (n - 1 || 1);
-  ctx.clearRect(0, 0, w, h);
-  ctx.font = '10px Consolas, monospace';
-
-  bands.forEach((v, i) => {
-    const y  = pad.t + i * (barH + gap);
-    const bw = v > 0 ? Math.max(2, (v / maxVal) * cw) : 2;
-    ctx.fillStyle = colors.muted; ctx.textAlign = 'right';
-    ctx.fillText(labels[i], pad.l - 5, y + barH / 2 + 4);
-    ctx.fillStyle = v > 0 ? colors.teal : colors.surface2;
-    ctx.globalAlpha = v > 0 ? .8 : 1;
-    ctx.beginPath();
-    ctx.rect(pad.l, y, bw, barH);
-    ctx.fill();
-    ctx.globalAlpha = 1;
-    ctx.fillStyle = colors.muted; ctx.textAlign = 'left';
-    ctx.fillText(v + ' 次', pad.l + bw + 5, y + barH / 2 + 4);
+  const maxValue = Math.max(...bands, 1);
+  const barH = Math.max(3, ch / bands.length - 5);
+  const gap = (ch - barH * bands.length) / Math.max(1, bands.length - 1);
+  chartHits.hour = [];
+  ctx.clearRect(0, 0, w, h); ctx.fillStyle = colors.surface; ctx.fillRect(0, 0, w, h);
+  ctx.fillStyle = colors.ink; ctx.font = '12px Consolas, monospace'; ctx.textAlign = 'left'; ctx.fillText('本月時段飲水次數', pad.l, 16);
+  bands.forEach((value, index) => {
+    const y = pad.t + index * (barH + gap);
+    const bw = value > 0 ? Math.max(2, value / maxValue * cw) : 2;
+    ctx.fillStyle = colors.muted; ctx.textAlign = 'right'; ctx.fillText(labels[index], pad.l - 7, y + barH / 2 + 4);
+    ctx.fillStyle = value > 0 ? colors.teal : colors.surface2; ctx.globalAlpha = value > 0 ? .85 : 1; ctx.fillRect(pad.l, y, bw, barH); ctx.globalAlpha = 1;
+    ctx.fillStyle = colors.muted; ctx.textAlign = 'left'; ctx.fillText(value + ' 次', pad.l + bw + 6, y + barH / 2 + 4);
+    chartHits.hour.push({ x: pad.l, y, w: bw, h: barH, label: labels[index], value });
   });
 }
 
 function drawWeekChart(canvas, avgs, labels, goal) {
-  const { ctx, w, h } = setupCanvas(canvas);
+  const { ctx, w, h } = setupCanvas(canvas, 160);
   const colors = chartColors();
-  const pad = { t: 12, r: 8, b: 28, l: 36 };
+  const pad = { t: 28, r: 12, b: 32, l: 42 };
   const cw = w - pad.l - pad.r, ch = h - pad.t - pad.b;
-  const n = labels.length, maxVal = Math.max(goal, ...avgs, 1);
-  const barW = Math.max(4, (cw / n) - 4), gap = (cw - barW * n) / (n - 1 || 1);
-  ctx.clearRect(0, 0, w, h);
-
-  const gy = pad.t + ch * (1 - goal / maxVal);
-  ctx.strokeStyle = colors.line;
-  ctx.setLineDash([4, 4]); ctx.lineWidth = 1;
-  ctx.beginPath(); ctx.moveTo(pad.l, gy); ctx.lineTo(pad.l + cw, gy); ctx.stroke();
-  ctx.setLineDash([]);
-
-  avgs.forEach((v, i) => {
-    const x  = pad.l + i * (barW + gap);
-    const bh = v > 0 ? Math.max(2, (v / maxVal) * ch) : 2;
-    const y  = pad.t + ch - bh;
-    ctx.fillStyle = v >= goal ? colors.tealDark : v > 0 ? colors.teal : colors.surface2;
-    ctx.globalAlpha = v > 0 ? (v >= goal ? 1 : .75) : 1;
-    ctx.beginPath();
-    ctx.rect(x, y, barW, bh);
-    ctx.fill();
-    ctx.globalAlpha = 1;
+  const maxVal = Math.max(goal, ...avgs, 1);
+  const barW = Math.max(5, cw / labels.length - 7);
+  const gap = (cw - barW * labels.length) / Math.max(1, labels.length - 1);
+  chartHits.week = [];
+  ctx.clearRect(0, 0, w, h); ctx.fillStyle = colors.surface; ctx.fillRect(0, 0, w, h);
+  ctx.fillStyle = colors.ink; ctx.font = '12px Consolas, monospace'; ctx.textAlign = 'left'; ctx.fillText('本月星期飲水量（日平均）', pad.l, 16);
+  const goalY = pad.t + ch * (1 - goal / maxVal);
+  ctx.strokeStyle = colors.line; ctx.setLineDash([4, 4]); ctx.beginPath(); ctx.moveTo(pad.l, goalY); ctx.lineTo(pad.l + cw, goalY); ctx.stroke(); ctx.setLineDash([]);
+  avgs.forEach((value, index) => {
+    const x = pad.l + index * (barW + gap);
+    const bh = value > 0 ? Math.max(2, value / maxVal * ch) : 2;
+    const y = pad.t + ch - bh;
+    ctx.fillStyle = value >= goal ? colors.tealDark : value > 0 ? colors.teal : colors.surface2; ctx.globalAlpha = value > 0 ? (value >= goal ? 1 : .75) : 1; ctx.fillRect(x, y, barW, bh); ctx.globalAlpha = 1;
+    chartHits.week.push({ x, y, w: barW, h: bh, label: '星期' + labels[index], value: Math.round(value) });
   });
+  ctx.fillStyle = colors.muted; ctx.font = '11px Consolas, monospace'; ctx.textAlign = 'center'; labels.forEach((label, index) => ctx.fillText(label, pad.l + index * (barW + gap) + barW / 2, h - 13));
+  ctx.textAlign = 'right'; [0, .5, 1].forEach(f => { const value = Math.round(maxVal * f); ctx.fillText(value >= 1000 ? (value / 1000).toFixed(1) + 'k' : String(value), pad.l - 5, pad.t + ch * (1 - f) + 3); });
+}
 
-  ctx.fillStyle = colors.muted;
-  ctx.font = '11px Consolas, monospace'; ctx.textAlign = 'center';
-  labels.forEach((l, i) => {
-    ctx.fillText(l, pad.l + i * (barW + gap) + barW / 2, h - pad.b + 14);
+function showHistoryTip(event, text) {
+  const tip = el('history-tip');
+  tip.textContent = text; tip.style.display = 'block';
+  const left = Math.min(event.clientX + 12, window.innerWidth - tip.offsetWidth - 8);
+  const top = Math.max(8, event.clientY - 38);
+  tip.style.left = Math.max(8, left) + 'px'; tip.style.top = top + 'px';
+}
+function hideHistoryTip() { el('history-tip').style.display = 'none'; }
+function chartHit(canvas, hits, event) {
+  const rect = canvas.getBoundingClientRect();
+  const x = event.clientX - rect.left, y = event.clientY - rect.top;
+  return hits.find(hit => x >= hit.x && x <= hit.x + hit.w && y >= hit.y && y <= hit.y + hit.h);
+}
+function attachChartTooltip(id, type) {
+  const canvas = el(id);
+  canvas.addEventListener('mousemove', event => {
+    const hit = chartHit(canvas, chartHits[type], event);
+    if (!hit) { hideHistoryTip(); return; }
+    if (type === 'daily') showHistoryTip(event, monthDayText(hit.key) + ' ' + Math.round(hit.value) + ' ml');
+    else if (type === 'hour') showHistoryTip(event, hit.label + '：' + hit.value + ' 次');
+    else showHistoryTip(event, hit.label + '：' + hit.value + ' ml');
   });
-  ctx.textAlign = 'right';
-  [0, 0.5, 1].forEach(f => {
-    const v = Math.round(maxVal * f);
-    ctx.fillText(v >= 1000 ? (v/1000).toFixed(1) + 'k' : v,
-                 pad.l - 4, pad.t + ch * (1 - f) + 3);
-  });
+  canvas.addEventListener('mouseleave', hideHistoryTip);
 }
 
-// ─── Log Table ──────────────────────────────────────────────────────────────
-
-function toggleLog() {
-  _logExpanded = !_logExpanded;
-  document.getElementById('log-section').style.display = _logExpanded ? '' : 'none';
-  document.getElementById('log-toggle').setAttribute('aria-expanded', _logExpanded ? 'true' : 'false');
-  updateToggle();
+function heatmapDateRange(year) {
+  if (year === null) {
+    const end = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 12);
+    const start = new Date(end); start.setDate(end.getDate() - 364);
+    return { start, end, count: 365, label: '最近 365 天' };
+  }
+  const start = new Date(year, 0, 1, 12);
+  const end = new Date(year, 11, 31, 12);
+  const leap = new Date(year, 1, 29, 12).getMonth() === 1;
+  return { start, end, count: leap ? 366 : 365, label: year + ' 年' };
+}
+function monthKeysForRange(start, end) {
+  const keys = [];
+  const cursor = new Date(start.getFullYear(), start.getMonth(), 1, 12);
+  const last = new Date(end.getFullYear(), end.getMonth(), 1, 12);
+  while (cursor <= last) { keys.push(monthStr(cursor.getFullYear(), cursor.getMonth() + 1)); cursor.setMonth(cursor.getMonth() + 1); }
+  return keys;
+}
+function fetchHeatmapMonth(month) {
+  if (heatmapInflight[month]) return heatmapInflight[month];
+  heatmapInflight[month] = hydraFetch('/api/logs?month=' + month).then(response => {
+    if (!response.ok) throw new Error('HTTP ' + response.status);
+    return response.json();
+  }).then(data => {
+    if (!data || !data.ok || !Array.isArray(data.entries)) throw new Error(data && data.error ? data.error : '無法讀取月份資料');
+    return data.entries;
+  }).finally(() => { delete heatmapInflight[month]; });
+  return heatmapInflight[month];
+}
+function heatmapMap(entries) {
+  const map = {};
+  for (const entry of entries) {
+    const key = dateKeyFromTs(entry.ts);
+    if (key && Number(entry.total) > (map[key] || 0)) map[key] = Number(entry.total);
+  }
+  return map;
+}
+function syncHeatmapControls() {
+  const period = heatmapYear === null ? '最近 365 天' : heatmapYear + ' 年';
+  setText('heatmap-period', period); el('heatmap-period').setAttribute('aria-label', period);
+  el('heatmap-prev').disabled = heatmapLoading;
+  el('heatmap-next').disabled = heatmapLoading;
+}
+function changeHeatmapYear(direction) {
+  if (heatmapLoading) return;
+  const currentYear = now.getFullYear();
+  if (heatmapYear === null) selectHeatmapYear(direction < 0 ? currentYear - 1 : currentYear);
+  else if (direction > 0 && heatmapYear >= currentYear) selectHeatmapYear(null);
+  else selectHeatmapYear(heatmapYear + direction);
+}
+function selectHeatmapYear(year) {
+  heatmapYear = Number.isInteger(year) ? year : null;
+  syncHeatmapControls(); loadHeatmap(heatmapYear);
+}
+async function loadHeatmap(year) {
+  const seq = ++heatmapFetchSeq;
+  const range = heatmapDateRange(year);
+  heatmapLoading = true; syncHeatmapControls();
+  setText('heatmap-loading', '載入中…'); el('heatmap-loading').style.display = '';
+  setHeatmapMessage('', '');
+  el('heatmap-wrap').style.display = 'none';
+  const cache = year === null ? heatmapCache.recent : heatmapCache.years[year];
+  if (cache) { drawHeatmap(year, cache); return; }
+  const results = await Promise.allSettled(monthKeysForRange(range.start, range.end).map(fetchHeatmapMonth));
+  if (seq !== heatmapFetchSeq) return;
+  heatmapLoading = false;
+  const failed = results.filter(result => result.status === 'rejected').length;
+  if (failed === results.length) {
+    syncHeatmapControls(); el('heatmap-loading').style.display = 'none'; setHeatmapMessage('熱力圖暫時無法載入，請稍後再試。', 'error'); return;
+  }
+  const entries = results.filter(result => result.status === 'fulfilled').flatMap(result => result.value);
+  const data = { start: range.start, end: range.end, count: range.count, label: range.label, map: heatmapMap(entries), hasData: entries.some(entry => !!dateKeyFromTs(entry.ts)) };
+  if (year === null) heatmapCache.recent = data;
+  else heatmapCache.years[year] = data;
+  syncHeatmapControls(); drawHeatmap(year, data); if (failed > 0) setHeatmapMessage('部分月份無法載入，顯示的色塊可能不完整。', 'warn');
+}
+function setHeatmapMessage(text, type) {
+  const message = el('heatmap-message'); message.textContent = text; message.className = 'history-note' + (type ? ' ' + type : ''); message.style.display = text ? '' : 'none';
+}
+function heatLevel(value, hasData) {
+  if (!hasData) return 0;
+  const ratio = dailyGoal > 0 ? value / dailyGoal : 0;
+  return ratio >= 1 ? 4 : ratio >= .75 ? 3 : ratio >= .5 ? 2 : 1;
+}
+function drawHeatmap(year, data) {
+  if (!data) return;
+  heatmapLoading = false; syncHeatmapControls();
+  el('heatmap-loading').style.display = 'none'; el('heatmap-wrap').style.display = '';
+  const canvas = el('year-heatmap');
+  const wrap = el('heatmap-wrap');
+  const cssWidth = Math.max(760, wrap.clientWidth - 18), cssHeight = 154, r = window.devicePixelRatio || 1;
+  canvas.width = Math.round(cssWidth * r); canvas.height = Math.round(cssHeight * r); canvas.style.width = cssWidth + 'px'; canvas.style.height = cssHeight + 'px';
+  const ctx = canvas.getContext('2d'); ctx.setTransform(r, 0, 0, r, 0, 0); ctx.clearRect(0, 0, cssWidth, cssHeight);
+  const startDay = data.start.getDay(), weeks = Math.floor((data.count - 1 + startDay) / 7) + 1;
+  const left = 31, top = 21, gap = 3, cell = Math.max(5, Math.min(14, (cssWidth - left - 8 - (weeks - 1) * gap) / weeks));
+  const colors = chartColors();
+  ctx.fillStyle = colors.surface; ctx.fillRect(0, 0, cssWidth, cssHeight); ctx.font = '10px Consolas, monospace'; ctx.fillStyle = colors.muted;
+  ['日', '一', '三', '五'].forEach((label, index) => ctx.fillText(label, 3, top + index * 2 * (cell + gap) + cell - 1));
+  heatmapCells = [];
+  let lastMonthX = -999;
+  for (let offset = 0; offset < data.count; offset++) {
+    const date = new Date(data.start); date.setDate(data.start.getDate() + offset);
+    const row = date.getDay(), col = Math.floor((offset + startDay) / 7), x = left + col * (cell + gap), y = top + row * (cell + gap), key = dateKeyFromDate(date), value = data.map[key] || 0, level = heatLevel(value, Object.prototype.hasOwnProperty.call(data.map, key));
+    if (date.getDate() === 1 && x - lastMonthX > 28) { ctx.fillStyle = colors.muted; ctx.fillText((date.getMonth() + 1) + '月', x, 11); lastMonthX = x; }
+    ctx.fillStyle = level === 0 ? colors.surface2 : colors.teal; ctx.globalAlpha = level === 0 ? 1 : [.25, .45, .68, .85, 1][level]; ctx.fillRect(x, y, cell, cell); ctx.globalAlpha = 1;
+    heatmapCells.push({ x, y, w: cell, h: cell, key, value, hasData: level > 0 });
+  }
+  ctx.fillStyle = colors.ink; ctx.fillText(data.label, left, cssHeight - 3);
+  canvas.setAttribute('aria-label', data.label + '每日飲水量熱力圖');
+  canvas._heatmap = { start: data.start, count: data.count, startDay, left, top, gap, cell };
+}
+function handleHeatmapTip(event) {
+  const canvas = el('year-heatmap'), meta = canvas._heatmap;
+  if (!meta) return;
+  const rect = canvas.getBoundingClientRect(), x = event.clientX - rect.left, y = event.clientY - rect.top;
+  const col = Math.floor((x - meta.left) / (meta.cell + meta.gap)), row = Math.floor((y - meta.top) / (meta.cell + meta.gap));
+  const hit = heatmapCells.find(cell => x >= cell.x && x <= cell.x + cell.w && y >= cell.y && y <= cell.y + cell.h && Math.floor((cell.x - meta.left) / (meta.cell + meta.gap)) === col && Math.floor((cell.y - meta.top) / (meta.cell + meta.gap)) === row);
+  if (!hit) { hideHistoryTip(); return; }
+  showHistoryTip(event, dateText(hit.key) + ' ' + (hit.hasData ? Math.round(hit.value) + ' ml' : '尚無資料'));
 }
 
-function setPageSize(n) {
-  _logPageSize = n; _logPage = 1;
-  document.querySelectorAll('.ps-btn').forEach(b => b.classList.toggle('active', +b.dataset.ps === n));
-  renderLogPage();
+function renderDailyTable(totals, counts) {
+  dailyRows = totals.map((total, index) => ({ key: dateKey(curYear, curMonth, index + 1), total, count: counts[index] })).reverse();
+  dailyPage = Math.min(dailyPage, Math.max(1, Math.ceil(dailyRows.length / 10)));
+  const hasData = dailyRows.some(row => row.total > 0 || row.count > 0);
+  el('daily-table-wrap').style.display = hasData ? '' : 'none'; el('daily-table-empty').style.display = hasData ? 'none' : '';
+  el('daily-pagination').style.display = hasData ? '' : 'none';
+  renderDailyPage();
 }
-
-function goPage(delta) {
-  const pages = Math.ceil(_logSorted.length / _logPageSize) || 1;
-  _logPage = Math.max(1, Math.min(pages, _logPage + delta));
-  renderLogPage();
+function renderDailyPage() {
+  const totalPages = Math.max(1, Math.ceil(dailyRows.length / 10));
+  const rows = dailyRows.slice((dailyPage - 1) * 10, dailyPage * 10);
+  el('daily-body').innerHTML = rows.map(row => '<tr><td>' + dateText(row.key) + '</td><td>' + (row.total > 0 ? Math.round(row.total) + ' ml' : '--') + '</td><td>' + (row.total > 0 ? '<span class="pill ' + (row.total >= dailyGoal ? 'on">達標' : 'off">未達標') + '</span>' : '--') + '</td><td>' + (row.count || 0) + '</td></tr>').join('');
+  setText('daily-page-label', '第 ' + dailyPage + ' / ' + totalPages + ' 頁'); el('daily-prev').disabled = dailyPage <= 1; el('daily-next').disabled = dailyPage >= totalPages;
 }
-
 function renderLogPage() {
-  const total = _logSorted.length;
-  const pages = Math.ceil(total / _logPageSize) || 1;
-  const show  = _logSorted.slice((_logPage - 1) * _logPageSize, _logPage * _logPageSize);
-
-  document.getElementById('log-empty').style.display  = total === 0 ? '' : 'none';
-  document.getElementById('log-table').style.display  = total > 0  ? '' : 'none';
-  document.getElementById('pagination').style.display = total > _logPageSize ? '' : 'none';
-
-  if (total > 0) {
-    const tbody = document.getElementById('log-body');
-    tbody.innerHTML = '';
-    show.forEach(e => {
-      const tr = document.createElement('tr');
-      tr.innerHTML = '<td>' + fmtTs(e.ts) + '</td>' +
-        '<td><strong>' + Math.round(e.ml || 0) + ' ml</strong></td>' +
-        '<td><strong>' + Math.round(e.total || 0) + ' ml</strong></td>';
-      tbody.appendChild(tr);
-    });
-    document.getElementById('pg-info').textContent =
-      '第 ' + _logPage + ' / ' + pages + ' 頁（共 ' + total + ' 筆）';
-    document.getElementById('pg-prev').disabled = _logPage <= 1;
-    document.getElementById('pg-next').disabled = _logPage >= pages;
-  }
+  const totalPages = Math.max(1, Math.ceil(logSorted.length / logPageSize));
+  logPage = Math.min(logPage, totalPages);
+  const rows = logSorted.slice((logPage - 1) * logPageSize, logPage * logPageSize);
+  const hasData = logSorted.length > 0;
+  el('log-table-wrap').style.display = hasData ? '' : 'none'; el('log-empty').style.display = hasData ? 'none' : '';
+  el('log-body').innerHTML = rows.map(entry => '<tr><td>' + fmtTs(entry.ts) + '</td><td><strong>' + Math.round(entry.ml || 0) + ' ml</strong></td><td><strong>' + Math.round(entry.total || 0) + ' ml</strong></td></tr>').join('');
+  setText('log-count', hasData ? '（' + logSorted.length + ' 筆）' : ''); setText('log-page-label', '第 ' + logPage + ' / ' + totalPages + ' 頁'); el('log-pagination').style.display = hasData && totalPages > 1 ? '' : 'none'; el('log-prev').disabled = logPage <= 1; el('log-next').disabled = logPage >= totalPages;
 }
 
-function updateToggle() {
-  const btn = document.getElementById('log-toggle');
-  btn.textContent = (_logExpanded ? '▼' : '▶') + ' 詳細記錄 ';
-  const sp = document.createElement('span');
-  sp.id = 'log-count';
-  sp.textContent = _logSorted.length > 0 ? '（' + _logSorted.length + ' 筆）' : '';
-  btn.appendChild(sp);
+function renderEmpty(message) {
+  setHistoryStatus('資料暫時無法取得', true); el('history-error').textContent = message; el('history-error').style.display = '';
+  ['daily-empty', 'hour-empty', 'week-empty'].forEach(id => { el(id).textContent = message; el(id).style.display = ''; });
+  ['daily-chart', 'hour-chart', 'week-chart'].forEach(id => { el(id).style.display = 'none'; });
+  ['s-total', 's-days', 's-avg', 's-max', 's-streak', 's-per', 'a-peak', 'a-count', 'a-gap', 'a-day'].forEach(id => setText(id, '--'));
+  dailyRows = []; renderDailyTable([], []); el('daily-table-empty').textContent = message; logSorted = []; renderLogPage();
 }
-
-// ─── Main Render ───────────────────────────────────────────────────────────
-
-function render() {
-  const seq = ++_fetchSeq;
-  const month = monthStr(curYear, curMonth);
-  document.getElementById('month-label').textContent =
-    curYear + ' 年 ' + String(curMonth).padStart(2, '0') + ' 月';
-  const todayY = now.getFullYear(), todayM = now.getMonth() + 1;
-  document.getElementById('btn-next').disabled =
-    curYear > todayY || (curYear === todayY && curMonth >= todayM);
-
-  hydraFetch('/api/logs?month=' + month)
-    .then(r => r.json())
-    .then(j => {
-      if (seq !== _fetchSeq) return;
-      if (!j.ok) { renderEmpty('API 錯誤：' + (j.error || '未知')); return; }
-      renderData(Array.isArray(j.entries) ? j.entries : []);
-    })
-    .catch(() => { if (seq === _fetchSeq) renderEmpty('連線失敗'); });
-}
-
-function renderEmpty(msg) {
-  ['daily-empty','hour-empty','week-empty','log-empty'].forEach(id => {
-    const el = document.getElementById(id);
-    el.textContent = msg; el.style.display = '';
-  });
-  ['daily-chart','hour-chart','week-chart','log-table','pagination'].forEach(id => {
-    document.getElementById(id).style.display = 'none';
-  });
-  ['s-total','s-days','s-avg','s-max','s-streak','s-per',
-   'a-peak','a-count','a-gap','a-day'].forEach(id => {
-    document.getElementById(id).textContent = '--';
-  });
-  _logSorted = []; updateToggle();
-}
-
 function renderData(entries) {
-  _cachedEntries = entries;
-
-  const dailyTotals = aggregateByDay(entries, curYear, curMonth);
-  const hasData = dailyTotals.some(v => v > 0);
-  document.getElementById('daily-chart').style.display = hasData ? '' : 'none';
-  document.getElementById('daily-empty').style.display = hasData ? 'none' : '';
-  if (hasData) drawDailyChart(document.getElementById('daily-chart'), dailyTotals, dailyGoal);
-
-  const recorded   = dailyTotals.filter(v => v > 0);
-  const monthTotal = recorded.reduce((a, b) => a + b, 0);
-  const goalDays   = recorded.filter(v => v >= dailyGoal).length;
-  const avgDay     = recorded.length ? Math.round(monthTotal / recorded.length) : 0;
-  const maxDay     = recorded.length ? Math.round(Math.max(...recorded)) : 0;
-  const streak     = calcMaxStreak(dailyTotals, dailyGoal);
-  const validD     = entries.filter(e => e.ml > 0);
-  const avgPer     = validD.length ? Math.round(validD.reduce((a, e) => a + e.ml, 0) / validD.length) : 0;
-  document.getElementById('s-total').textContent  = Math.round(monthTotal) + ' ml';
-  document.getElementById('s-days').textContent   = goalDays + ' / ' + recorded.length;
-  document.getElementById('s-avg').textContent    = avgDay + ' ml';
-  document.getElementById('s-max').textContent    = maxDay + ' ml';
-  document.getElementById('s-streak').textContent = streak + ' 天';
-  document.getElementById('s-per').textContent    = avgPer + ' ml';
-
-  const synced = entries.filter(e => e.ts && !isNaN(new Date(e.ts).getTime()));
-  const { bands, labels } = aggregateByHourBand(synced);
-  const maxBand   = Math.max(...bands);
-  const peakBands = maxBand > 0 ? labels.filter((_, i) => bands[i] === maxBand) : [];
-  document.getElementById('a-peak').textContent  =
-    peakBands.length === 0 ? '--' : peakBands.length === 1 ? peakBands[0] : peakBands[0] + ' 等';
-  document.getElementById('a-count').textContent = entries.length + ' 次';
-  const gap = calcMaxGapHours(synced);
-  document.getElementById('a-gap').textContent   = gap > 0 ? gap.toFixed(1) + ' 小時' : '--';
-  document.getElementById('a-day').textContent   = bestDrinkDay(synced);
-
-  const hasHour = bands.some(v => v > 0);
-  document.getElementById('hour-chart').style.display = hasHour ? '' : 'none';
-  document.getElementById('hour-empty').style.display = hasHour ? 'none' : '';
-  if (hasHour) drawHourChart(document.getElementById('hour-chart'), bands, labels);
-
-  const { avgs, labels: wl } = aggregateByWeekday(dailyTotals, curYear, curMonth);
-  const hasWeek = avgs.some(v => v > 0);
-  document.getElementById('week-chart').style.display = hasWeek ? '' : 'none';
-  document.getElementById('week-empty').style.display = hasWeek ? 'none' : '';
-  if (hasWeek) drawWeekChart(document.getElementById('week-chart'), avgs, wl, dailyGoal);
-
-  _logSorted = entries.slice().sort((a, b) => tsMs(b) - tsMs(a));
-  _logPage = 1;
-  renderLogPage();
-  updateToggle();
+  cachedEntries = entries;
+  el('history-error').style.display = 'none'; setHistoryStatus('目前查看：' + curYear + ' 年 ' + pad2(curMonth) + ' 月', false);
+  setText('daily-empty', '本月無飲水記錄'); setText('hour-empty', '無時間同步記錄'); setText('week-empty', '本月無飲水記錄'); setText('daily-table-empty', '本月無飲水記錄');
+  const totals = aggregateByDay(entries, curYear, curMonth), counts = aggregateDayCounts(entries, curYear, curMonth), recorded = totals.filter(value => value > 0), hasData = recorded.length > 0;
+  el('daily-chart').style.display = hasData ? '' : 'none'; el('daily-empty').style.display = hasData ? 'none' : '';
+  if (hasData) drawDailyChart(el('daily-chart'), totals, dailyGoal);
+  const monthTotal = recorded.reduce((a, b) => a + b, 0), goalDays = recorded.filter(value => value >= dailyGoal).length, avgDay = recorded.length ? Math.round(monthTotal / recorded.length) : 0, maxDay = recorded.length ? Math.round(Math.max(...recorded)) : 0;
+  setText('s-total', Math.round(monthTotal) + ' ml'); setText('s-days', goalDays + ' / ' + recorded.length); setText('s-avg', avgDay + ' ml'); setText('s-max', maxDay + ' ml'); setText('s-streak', calcMaxStreak(totals, dailyGoal) + ' 天');
+  const validAmounts = entries.filter(entry => Number(entry.ml) > 0); setText('s-per', validAmounts.length ? Math.round(validAmounts.reduce((sum, entry) => sum + Number(entry.ml), 0) / validAmounts.length) + ' ml' : '--');
+  const synced = entries.filter(entry => deviceHour(entry.ts) >= 0), hour = aggregateByHourBand(synced), maxBand = Math.max(...hour.bands), peak = maxBand > 0 ? hour.labels.filter((_, index) => hour.bands[index] === maxBand) : [];
+  setText('a-peak', peak.length === 0 ? '--' : peak.length === 1 ? peak[0] : peak[0] + ' 等'); setText('a-count', entries.length + ' 次'); const gap = calcMaxGapHours(synced); setText('a-gap', gap > 0 ? gap.toFixed(1) + ' 小時' : '--'); setText('a-day', bestDrinkDay(synced));
+  const hasHour = hour.bands.some(value => value > 0); el('hour-chart').style.display = hasHour ? '' : 'none'; el('hour-empty').style.display = hasHour ? 'none' : ''; if (hasHour) drawHourChart(el('hour-chart'), hour.bands, hour.labels);
+  const week = aggregateByWeekday(totals, curYear, curMonth), hasWeek = week.avgs.some(value => value > 0); el('week-chart').style.display = hasWeek ? '' : 'none'; el('week-empty').style.display = hasWeek ? 'none' : ''; if (hasWeek) drawWeekChart(el('week-chart'), week.avgs, week.labels, dailyGoal);
+  renderDailyTable(totals, counts); logSorted = entries.slice().sort((a, b) => tsMs(b) - tsMs(a)); logPage = 1; renderLogPage();
+}
+function render() {
+  const seq = ++fetchSeq;
+  setText('month-label', curYear + ' 年 ' + pad2(curMonth) + ' 月'); setText('goal-note', dailyGoal + ' ml');
+  const todayMonth = now.getFullYear() * 12 + now.getMonth(), selectedMonth = curYear * 12 + curMonth - 1; el('btn-next').disabled = selectedMonth >= todayMonth;
+  hydraFetch('/api/logs?month=' + monthStr(curYear, curMonth)).then(response => response.json()).then(data => { if (seq !== fetchSeq) return; if (!data.ok) renderEmpty('API 錯誤：' + (data.error || '未知')); else renderData(Array.isArray(data.entries) ? data.entries : []); }).catch(() => { if (seq === fetchSeq) renderEmpty('連線失敗'); });
 }
 
-// Month navigation
-document.getElementById('btn-prev').addEventListener('click', () => {
-  if (--curMonth < 1) { curMonth = 12; curYear--; }
-  render();
-});
-document.getElementById('btn-next').addEventListener('click', () => {
-  if (++curMonth > 12) { curMonth = 1; curYear++; }
-  render();
-});
+el('btn-prev').addEventListener('click', () => { if (--curMonth < 1) { curMonth = 12; curYear--; } render(); });
+el('btn-next').addEventListener('click', () => { if (++curMonth > 12) { curMonth = 1; curYear++; } render(); });
+el('daily-prev').addEventListener('click', () => { if (dailyPage > 1) { dailyPage--; renderDailyPage(); } });
+el('daily-next').addEventListener('click', () => { if (dailyPage < Math.ceil(dailyRows.length / 10)) { dailyPage++; renderDailyPage(); } });
+el('log-prev').addEventListener('click', () => { if (logPage > 1) { logPage--; renderLogPage(); } });
+el('log-next').addEventListener('click', () => { if (logPage < Math.ceil(logSorted.length / logPageSize)) { logPage++; renderLogPage(); } });
+el('heatmap-prev').addEventListener('click', () => changeHeatmapYear(-1));
+el('heatmap-next').addEventListener('click', () => changeHeatmapYear(1));
+document.querySelectorAll('.ps-btn').forEach(button => button.addEventListener('click', () => { logPageSize = Number(button.dataset.ps); logPage = 1; document.querySelectorAll('.ps-btn').forEach(item => item.classList.toggle('active', item === button)); renderLogPage(); }));
+attachChartTooltip('daily-chart', 'daily'); attachChartTooltip('hour-chart', 'hour'); attachChartTooltip('week-chart', 'week');
+el('year-heatmap').addEventListener('mousemove', handleHeatmapTip); el('year-heatmap').addEventListener('mouseleave', hideHistoryTip); el('year-heatmap').addEventListener('touchstart', event => { if (event.touches[0]) handleHeatmapTip(event.touches[0]); }, { passive: true }); el('year-heatmap').addEventListener('touchend', hideHistoryTip);
 
-// Resize
-let _resizeTimer = null;
-window.addEventListener('resize', () => {
-  clearTimeout(_resizeTimer);
-  _resizeTimer = setTimeout(() => {
-    const dc = document.getElementById('daily-chart');
-    const hc = document.getElementById('hour-chart');
-    const wc = document.getElementById('week-chart');
-    const dt = aggregateByDay(_cachedEntries, curYear, curMonth);
-    if (dc.style.display !== 'none') drawDailyChart(dc, dt, dailyGoal);
-    if (hc.style.display !== 'none') {
-      const synced = _cachedEntries.filter(e => e.ts && !isNaN(new Date(e.ts).getTime()));
-      const { bands, labels } = aggregateByHourBand(synced);
-      drawHourChart(hc, bands, labels);
-    }
-    if (wc.style.display !== 'none') {
-      const { avgs, labels } = aggregateByWeekday(dt, curYear, curMonth);
-      drawWeekChart(wc, avgs, labels, dailyGoal);
-    }
-    if (_hmapCache[curHmapYear] && document.getElementById('hmap-wrap').style.display !== 'none')
-      drawHeatmap(curHmapYear, _hmapCache[curHmapYear]);
-  }, 150);
-});
+function redrawVisible() {
+  const totals = aggregateByDay(cachedEntries, curYear, curMonth);
+  if (el('daily-chart').style.display !== 'none' && totals.some(value => value > 0)) drawDailyChart(el('daily-chart'), totals, dailyGoal);
+  const synced = cachedEntries.filter(entry => deviceHour(entry.ts) >= 0), hour = aggregateByHourBand(synced); if (el('hour-chart').style.display !== 'none') drawHourChart(el('hour-chart'), hour.bands, hour.labels);
+  const week = aggregateByWeekday(totals, curYear, curMonth); if (el('week-chart').style.display !== 'none') drawWeekChart(el('week-chart'), week.avgs, week.labels, dailyGoal);
+  const data = heatmapYear === null ? heatmapCache.recent : heatmapCache.years[heatmapYear]; if (data && el('heatmap-wrap').style.display !== 'none') drawHeatmap(heatmapYear, data);
+}
+window.addEventListener('resize', () => { clearTimeout(window._historyResizeTimer); window._historyResizeTimer = setTimeout(redrawVisible, 150); });
+window.addEventListener('hydra-theme-change', redrawVisible);
 
-window.addEventListener('hydra-theme-change', () => {
-  const dt = aggregateByDay(_cachedEntries, curYear, curMonth);
-  const dc = document.getElementById('daily-chart');
-  const hc = document.getElementById('hour-chart');
-  const wc = document.getElementById('week-chart');
-  if (dc.style.display !== 'none' && _cachedEntries.length) drawDailyChart(dc, dt, dailyGoal);
-  if (hc.style.display !== 'none' && _cachedEntries.length) {
-    const synced = _cachedEntries.filter(e => e.ts && !isNaN(new Date(e.ts).getTime()));
-    const { bands, labels } = aggregateByHourBand(synced);
-    drawHourChart(hc, bands, labels);
-  }
-  if (wc.style.display !== 'none' && _cachedEntries.length) {
-    const { avgs, labels } = aggregateByWeekday(dt, curYear, curMonth);
-    drawWeekChart(wc, avgs, labels, dailyGoal);
-  }
-  if (hmapCanvas._hm) drawHeatmap(hmapCanvas._hm.year, hmapCanvas._hm.dt);
-});
-
-let _hmapResizeTimer;
-window.addEventListener('resize', () => {
-  clearTimeout(_hmapResizeTimer);
-  _hmapResizeTimer = setTimeout(() => {
-    const wrap = document.getElementById('hmap-wrap');
-    if (hmapCanvas._hm && wrap.style.display !== 'none')
-      drawHeatmap(hmapCanvas._hm.year, hmapCanvas._hm.dt);
-  }, 100);
-});
+hydraFetch('/api/config').then(response => response.json()).then(data => { if (data.ok && data.dailyGoalMl > 0 && data.dailyGoalMl < 50000) dailyGoal = data.dailyGoalMl; setText('goal-note', dailyGoal + ' ml'); render(); loadHeatmap(null); }).catch(() => { setText('goal-note', dailyGoal + ' ml'); render(); loadHeatmap(null); });
 </script>
 </body>
 </html>
