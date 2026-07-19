@@ -16,6 +16,7 @@ constexpr uint8_t CONTROL_COMMAND = 0x00;
 constexpr uint8_t CONTROL_DATA = 0x40;
 
 // Compact 5x7 glyphs for the ASCII characters used on the device screen.
+// The lowercase g uses the optional eighth row for its descender.
 const uint8_t DIGITS[10][5] = {
     {0x3e,0x51,0x49,0x45,0x3e},{0x00,0x42,0x7f,0x40,0x00},
     {0x62,0x51,0x49,0x49,0x46},{0x22,0x49,0x49,0x49,0x36},
@@ -38,6 +39,9 @@ const uint8_t LETTERS[26][5] = {
     {0x7f,0x20,0x18,0x20,0x7f},{0x63,0x14,0x08,0x14,0x63},
     {0x07,0x08,0x70,0x08,0x07},{0x61,0x51,0x49,0x45,0x43}
 };
+const uint8_t LOWER_G[5] = {0x18,0xa4,0xa4,0xa4,0x78};
+const uint8_t LOWER_M[5] = {0x7c,0x04,0x18,0x04,0x78};
+const uint8_t LOWER_S[5] = {0x48,0x54,0x54,0x54,0x20};
 
 const uint8_t* glyph(char input) {
     static const uint8_t space[5] = {0,0,0,0,0};
@@ -48,6 +52,9 @@ const uint8_t* glyph(char input) {
     static const uint8_t percent[5] = {0x63,0x13,0x08,0x64,0x63};
     static const uint8_t plus[5] = {0x08,0x08,0x3e,0x08,0x08};
     static const uint8_t question[5] = {0x02,0x01,0x51,0x09,0x06};
+    if (input == 'g') return LOWER_G;
+    if (input == 'm') return LOWER_M;
+    if (input == 's') return LOWER_S;
     if (input >= 'a' && input <= 'z') input = static_cast<char>(input - 'a' + 'A');
     if (input >= '0' && input <= '9') return DIGITS[input - '0'];
     if (input >= 'A' && input <= 'Z') return LETTERS[input - 'A'];
@@ -114,7 +121,7 @@ void DisplayManager::_drawText(int x, int y, const char* text, uint8_t scale) {
         const uint8_t* data = glyph(text[index]);
         const int origin = x + static_cast<int>(index) * 6 * scale;
         for (uint8_t column = 0; column < 5; ++column) {
-            for (uint8_t row = 0; row < 7; ++row) {
+            for (uint8_t row = 0; row < 8; ++row) {
                 if ((data[column] & (1U << row)) == 0) continue;
                 for (uint8_t dx = 0; dx < scale; ++dx) for (uint8_t dy = 0; dy < scale; ++dy) {
                     const int px = origin + column * scale + dx;
@@ -195,22 +202,22 @@ void DisplayManager::update() {
 void DisplayManager::_drawPage0Weight(float weightG, const std::string& ip) {
     if (!std::isfinite(weightG)) weightG = 0.0f;
     _centerText(ip.empty() ? "--" : ip.c_str(), 0, 1);
-    char value[16]; std::snprintf(value, sizeof(value), "%.0f G", weightG);
-    _centerText(value, 8, 3);
+    char value[16]; std::snprintf(value, sizeof(value), "%.0f g", weightG);
+    _centerText(value, 7, 3);
 }
 
 void DisplayManager::_drawPage1Hydration(float todayMl, uint32_t goalMl, uint32_t drinkCount,
                                          float lastDrinkMl, uint32_t nextRemSec) {
     if (!std::isfinite(todayMl) || todayMl < 0) todayMl = 0;
-    char value[40]; std::snprintf(value, sizeof(value), "%.0f ML", todayMl); _centerText(value, 0, 2);
+    char value[40]; std::snprintf(value, sizeof(value), "%.0f mL", todayMl); _centerText(value, 0, 2);
     const uint32_t pct = goalMl ? static_cast<uint32_t>(todayMl * 100.0f / goalMl) : 0;
-    std::snprintf(value, sizeof(value), "%lu%% G:%lu D:%lu",
+    std::snprintf(value, sizeof(value), "%lu%% G:%lu mL D:%lu",
                   static_cast<unsigned long>(std::min<uint32_t>(pct, 100U)),
                   static_cast<unsigned long>(goalMl), static_cast<unsigned long>(drinkCount));
     _centerText(value, 16, 1);
     if (nextRemSec == 0) _centerText("DRINK NOW", 24, 1);
     else {
-        std::snprintf(value, sizeof(value), "L:%.0f N:%luS", lastDrinkMl,
+        std::snprintf(value, sizeof(value), "L:%.0f mL N:%lu s", lastDrinkMl,
                       static_cast<unsigned long>(nextRemSec));
         _centerText(value, 24, 1);
     }
