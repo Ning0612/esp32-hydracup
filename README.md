@@ -49,10 +49,12 @@ The local dashboard is served by the ESP32 at `http://<device-ip>`. The screensh
 <div align="center">
   <table align="center">
     <tr>
-      <td align="center" valign="top">
+      <td colspan="2" align="center" valign="top">
         <strong>Dashboard overview</strong><br>
-        <img src="docs/demo/webui/dashboard-overview.png" alt="HydraCup WebUI dashboard overview" width="360">
+        <img src="docs/demo/webui/dashboard-overview.png" alt="HydraCup WebUI dashboard overview" width="640">
       </td>
+    </tr>
+    <tr>
       <td align="center" valign="top">
         <strong>History overview</strong><br>
         <img src="docs/demo/webui/history-overview.jpeg" alt="HydraCup WebUI history overview" width="360">
@@ -63,19 +65,13 @@ The local dashboard is served by the ESP32 at `http://<device-ip>`. The screensh
       </td>
     </tr>
     <tr>
-      <td colspan="3" align="center">
-        <table align="center">
-          <tr>
-            <td align="center" valign="top">
-              <strong>Device settings</strong><br>
-              <img src="docs/demo/webui/settings-overview.jpeg" alt="HydraCup WebUI device settings" width="440">
-            </td>
-            <td align="center" valign="top">
-              <strong>Scale calibration</strong><br>
-              <img src="docs/demo/webui/settings-calibration.png" alt="HydraCup WebUI scale calibration" width="640">
-            </td>
-          </tr>
-        </table>
+      <td align="center" valign="top">
+        <strong>Device settings</strong><br>
+        <img src="docs/demo/webui/settings-overview.jpeg" alt="HydraCup WebUI device settings" width="440">
+      </td>
+      <td align="center" valign="top">
+        <strong>Scale calibration</strong><br>
+        <img src="docs/demo/webui/settings-calibration.png" alt="HydraCup WebUI scale calibration" width="640">
       </td>
     </tr>
   </table>
