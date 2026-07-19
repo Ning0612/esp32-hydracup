@@ -31,3 +31,8 @@ ESP32 智慧水杯追蹤器完整文件索引。
 - [guides/calibration.md](guides/calibration.md) — 秤重校正步驟
 - [guides/configuration.md](guides/configuration.md) — 所有設定說明
 - [guides/discord-setup.md](guides/discord-setup.md) — Discord Webhook 設定
+
+## 版本紀錄
+
+- [releases/v0.3.0.md](releases/v0.3.0.md) — WebUI 風格重設計與展示素材更新
+- [releases/v0.2.0.md](releases/v0.2.0.md) — FreeRTOS runtime 與背景 worker 更新

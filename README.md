@@ -3,7 +3,7 @@
 [![PlatformIO](https://img.shields.io/badge/PlatformIO-espressif32%406.10-orange?logo=platformio)](https://platformio.org)
 [![ESP32](https://img.shields.io/badge/Board-ESP32-red?logo=espressif)](https://www.espressif.com/en/products/socs/esp32)
 [![Arduino](https://img.shields.io/badge/Framework-Arduino-teal?logo=arduino)](https://www.arduino.cc)
-[![Version](https://img.shields.io/badge/Version-0.2.0-brightgreen)](include/version.h)
+[![Version](https://img.shields.io/badge/Version-0.3.0-brightgreen)](include/version.h)
 [![CI](https://github.com/Ning0612/esp32-hydracup/actions/workflows/ci.yml/badge.svg)](https://github.com/Ning0612/esp32-hydracup/actions/workflows/ci.yml)
 [![License](https://img.shields.io/badge/License-MIT-yellow)](LICENSE)
 
@@ -13,9 +13,22 @@ ESP32-based smart water cup tracker. Measures cup weight via HX711, detects drin
 
 Personal side project for daily hydration tracking. It may continue to receive maintenance when new feature ideas or practical usage needs come up.
 
-<p align="center">
-  <img src="docs/demo/real-setup.jpg" alt="HydraCup real hardware setup" width="720">
-</p>
+Real hardware:
+
+<div align="center">
+  <table align="center">
+    <tr>
+      <td align="center" valign="top">
+        <strong>HydraCup real setup</strong><br>
+        <img src="docs/demo/real-setup.jpg" alt="HydraCup real hardware setup" width="420">
+      </td>
+      <td align="center" valign="top">
+        <strong>OLED status</strong><br>
+        <img src="docs/demo/oled-status.jpg" alt="HydraCup OLED status on real hardware" width="420">
+      </td>
+    </tr>
+  </table>
+</div>
 
 ## Demo
 
@@ -29,11 +42,44 @@ Full demo video:
 
 - [Drink detection demo (MP4)](docs/demo/drink-detection-demo.mp4)
 
-OLED status:
+WebUI screenshots:
 
-<p align="center">
-  <img src="docs/demo/oled-status.jpg" alt="HydraCup OLED daily progress display" width="560">
-</p>
+The local dashboard is served by the ESP32 at `http://<device-ip>`. The screenshots below cover the live dashboard, history analytics, and device configuration workflows.
+
+<div align="center">
+  <table align="center">
+    <tr>
+      <td align="center" valign="top">
+        <strong>Dashboard overview</strong><br>
+        <img src="docs/demo/webui/dashboard-overview.png" alt="HydraCup WebUI dashboard overview" width="360">
+      </td>
+      <td align="center" valign="top">
+        <strong>History overview</strong><br>
+        <img src="docs/demo/webui/history-overview.jpeg" alt="HydraCup WebUI history overview" width="360">
+      </td>
+      <td align="center" valign="top">
+        <strong>History statistics</strong><br>
+        <img src="docs/demo/webui/history-statistics.png" alt="HydraCup WebUI history statistics" width="360">
+      </td>
+    </tr>
+    <tr>
+      <td colspan="3" align="center">
+        <table align="center">
+          <tr>
+            <td align="center" valign="top">
+              <strong>Device settings</strong><br>
+              <img src="docs/demo/webui/settings-overview.jpeg" alt="HydraCup WebUI device settings" width="440">
+            </td>
+            <td align="center" valign="top">
+              <strong>Scale calibration</strong><br>
+              <img src="docs/demo/webui/settings-calibration.png" alt="HydraCup WebUI scale calibration" width="640">
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</div>
 
 ---
 
