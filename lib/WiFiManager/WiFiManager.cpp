@@ -119,7 +119,6 @@ int WiFiManager::scan(WifiNetwork* networks, int capacity) {
             ++used;
         }
     }
-    esp_wifi_scan_get_ap_records(&fetch, records);
     return used;
 }
 
