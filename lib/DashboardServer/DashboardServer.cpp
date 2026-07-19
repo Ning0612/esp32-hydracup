@@ -195,7 +195,7 @@ esp_err_t DashboardServer::_handlePost(httpd_req_t* request) {
         if (password.empty() || password.size() > 128) { _recordAuthFailure(ip); _sendAuthFailure(request, 401, "invalid_credentials"); return ESP_OK; }
         if (_cfg->adminPasswordHash.empty()) { if (password.size() < 8 || !http_constant_time_equal(password, confirm)) { _recordAuthFailure(ip); _sendAuthFailure(request, 401, "invalid_credentials"); return ESP_OK; } _cfg->adminPasswordHash = http_create_password_hash(password); if (_cfg->adminPasswordHash.empty() || !_cfgMgr->save(*_cfg)) { _cfg->adminPasswordHash.clear(); _sendAuthFailure(request, 500, "password_persist_failed"); return ESP_OK; } }
         else if (!http_verify_password_hash(password, _cfg->adminPasswordHash)) { _recordAuthFailure(ip); _sendAuthFailure(request, 401, "invalid_credentials"); return ESP_OK; }
-        _establishSession(); httpd_resp_set_hdr(request, "Set-Cookie", ("session=" + _sessionToken + "; Path=/; HttpOnly; SameSite=Strict").c_str()); _sendJson(request, "{\"ok\":true,\"configured\":true}"); return ESP_OK;
+        _establishSession(); const std::string cookie = "session=" + _sessionToken + "; Path=/; HttpOnly; SameSite=Strict"; httpd_resp_set_hdr(request, "Set-Cookie", cookie.c_str()); _sendJson(request, "{\"ok\":true,\"configured\":true}"); return ESP_OK;
     }
     if (uri == "/api/auth/logout") { if (!_requireApiAuth(request, true)) return ESP_OK; _clearSession(); httpd_resp_set_hdr(request, "Set-Cookie", "session=; Max-Age=0; Path=/; HttpOnly; SameSite=Strict"); _sendJson(request, "{\"ok\":true}"); return ESP_OK; }
     if (uri == "/api/reboot") { if (!_requireApiAuth(request, true)) return ESP_OK; _sendJson(request, "{\"ok\":true}"); http_restart_after_response(); return ESP_OK; }
