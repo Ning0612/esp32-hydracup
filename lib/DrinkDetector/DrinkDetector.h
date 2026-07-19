@@ -1,21 +1,24 @@
 #pragma once
-#include <Arduino.h>
-#include <Preferences.h>
-#include "app_types.h"
-#include "ScaleManager.h"
-#include "AppState.h"
-#include "ReminderManager.h"
-#include "BuzzerController.h"
-#include "DrinkDetectorCore.h"
-#include <atomic>
 
+#include <atomic>
+#include <cstdint>
+
+#include "DrinkDetectorCore.h"
+#include "AppState.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
+
+class AppState;
+struct AppConfig;
+class BuzzerController;
 class DiscordNotifier;
 class EventLogger;
-class TimeManager;
 class MqttPublisher;
+class ReminderManager;
+class ScaleManager;
+class TimeManager;
 
-class DrinkDetector : private DrinkDetectorEventSink,
-                      private DrinkDetectorEffects {
+class DrinkDetector : private DrinkDetectorEventSink, private DrinkDetectorEffects {
 public:
     void init(ScaleManager& scale, AppState& state, const AppConfig& cfg,
               ReminderManager& reminder, BuzzerController& buzzer);
@@ -28,21 +31,18 @@ public:
         return _nvsDone && _restoreStatus == DrinkCounterLoadStatus::PREVIOUS_PERIOD;
     }
     const char* getRestoredPeriod() const { return _events.getRestoredPeriod(); }
-
-    void setDiscordNotifier(DiscordNotifier* dn) { _discord  = dn; }
-    void setEventLogger(EventLogger* el)         { _eventLog = el; }
-    void setTimeManager(TimeManager* tm)         { _time     = tm; }
-    void setMqttPublisher(MqttPublisher* mp)     { _mqtt     = mp; }
+    void setDiscordNotifier(DiscordNotifier* value) { _discord = value; }
+    void setEventLogger(EventLogger* value) { _eventLog = value; }
+    void setTimeManager(TimeManager* value) { _time = value; }
+    void setMqttPublisher(MqttPublisher* value) { _mqtt = value; }
     void setCounterPersistence(DrinkCounterPersistence* store) {
-        _counterStore = store;
-        _events.setPersistence(store);
+        _counterStore = store; _events.setPersistence(store);
     }
-
-    CupState getCupState()        const { return _state->cupState; }
-    float    getTodayTotalMl()    const { return _events.getTodayTotalMl(); }
-    float    getLastDrinkMl()     const { return _events.getLastDrinkMl(); }
+    CupState getCupState() const { return _state ? _state->cupState : CupState::NO_CUP; }
+    float getTodayTotalMl() const { return _events.getTodayTotalMl(); }
+    float getLastDrinkMl() const { return _events.getLastDrinkMl(); }
     uint32_t getDrinkCountToday() const { return _events.getDrinkCountToday(); }
-    void     resetDailyCounters();
+    void resetDailyCounters();
 
 private:
     void onDrinkConfirmed(float amountMl) override;
@@ -52,23 +52,26 @@ private:
     void notifyDrink(float amountMl, float totalMl, uint32_t drinkCount) override;
     void logDrink(const char* timestamp, float amountMl, float totalMl) override;
     void publishStatus(float totalMl, const char* event) override;
+    void _syncCupState();
+    void _startNvsRestore();
+    void _finishNvsRestore();
+    static void _restoreTaskFunc(void* param);
+    static const char* _cupStateName(CupState state);
 
     DrinkDetectorCore _core;
     DrinkDetectorConfig _coreConfig;
     DrinkDetectorEventHandler _events;
-    ScaleManager*     _scale      = nullptr;
-    AppState*         _state      = nullptr;
-    const AppConfig*  _cfg        = nullptr;
-    ReminderManager*  _reminder   = nullptr;
-    BuzzerController* _buzzer     = nullptr;
-    DiscordNotifier*  _discord    = nullptr;
-    EventLogger*      _eventLog   = nullptr;
-    TimeManager*      _time       = nullptr;
-    MqttPublisher*    _mqtt       = nullptr;
+    ScaleManager* _scale = nullptr;
+    AppState* _state = nullptr;
+    const AppConfig* _cfg = nullptr;
+    ReminderManager* _reminder = nullptr;
+    BuzzerController* _buzzer = nullptr;
+    DiscordNotifier* _discord = nullptr;
+    EventLogger* _eventLog = nullptr;
+    TimeManager* _time = nullptr;
+    MqttPublisher* _mqtt = nullptr;
     DrinkCounterPersistence* _counterStore = nullptr;
-
-    bool     _nvsDone               = false;
-
+    bool _nvsDone = false;
     enum class RestoreState : uint8_t { IDLE, LOADING, READY, FAILED };
     std::atomic<RestoreState> _restoreState{RestoreState::IDLE};
     DrinkCounterLoadStatus _restoreStatus = DrinkCounterLoadStatus::EMPTY;
@@ -78,11 +81,4 @@ private:
     char _restorePeriod[16] = {};
     TaskHandle_t _restoreTask = nullptr;
     uint32_t _restoreRetryAtMs = 0;
-
-    void _syncCupState();
-    void _startNvsRestore();
-    void _finishNvsRestore();
-    static void _restoreTaskFunc(void* param);
-
-    static const char* _cupStateName(CupState s);
 };

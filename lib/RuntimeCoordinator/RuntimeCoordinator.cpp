@@ -1,4 +1,5 @@
 #include "RuntimeCoordinator.h"
+#include "hal_log.h"
 #include <cstring>
 
 bool RuntimeCoordinator::begin() {
@@ -7,7 +8,7 @@ bool RuntimeCoordinator::begin() {
     _resultQueue = xQueueCreate(8, sizeof(ControlResult));
     if (_snapshotMutex && _commandQueue && _resultQueue) return true;
 
-    Serial.println("[RTOS] RuntimeCoordinator allocation failed");
+    LOG_ERROR("RTOS", "RuntimeCoordinator allocation failed");
     return false;
 }
 
@@ -37,7 +38,7 @@ bool RuntimeCoordinator::isControlHealthy(TickType_t maxAgeTicks) const {
     return last != 0 && (xTaskGetTickCount() - last) <= maxAgeTicks;
 }
 
-void RuntimeCoordinator::publishConnectivity(bool wifiConnected, const String& ipAddress) {
+void RuntimeCoordinator::publishConnectivity(bool wifiConnected, const std::string& ipAddress) {
     if (!_snapshotMutex || xSemaphoreTake(_snapshotMutex, pdMS_TO_TICKS(20)) != pdTRUE) return;
     _snapshot.wifiConnected = wifiConnected;
     std::strncpy(_snapshot.ipAddress, ipAddress.c_str(), sizeof(_snapshot.ipAddress) - 1);

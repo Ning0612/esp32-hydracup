@@ -1,89 +1,100 @@
 #include "ReminderManager.h"
 
+#include "hal_log.h"
+#include "hal_time.h"
+
 void ReminderManager::init(uint32_t intervalMin, bool enabled) {
-    const uint64_t ms = (uint64_t)intervalMin * 60000ULL;
-    _intervalMs  = (ms > 0xFFFFFFFFULL) ? 0xFFFFFFFFU : (uint32_t)ms;
-    _enabled     = enabled;
-    _lastEventMs = millis();
+    setIntervalMin(intervalMin);
+    _enabled = enabled;
+    _lastEventMs = hal_millis();
+}
+
+void ReminderManager::setEnabled(bool en) {
+    _enabled = en;
+    if (!en) {
+        _alerting = false;
+        _beepCycleEndMs = 0;
+        _overdueWhileAway = false;
+        if (_buzzer) _buzzer->stop();
+    }
+}
+
+void ReminderManager::setIntervalMin(uint32_t min) {
+    const uint64_t milliseconds = static_cast<uint64_t>(min) * 60000ULL;
+    _intervalMs = static_cast<uint32_t>(std::min<uint64_t>(milliseconds, 0xFFFFFFFFULL));
+}
+
+void ReminderManager::setAlertTimeoutSec(uint32_t sec) {
+    _alertTimeoutMs = static_cast<uint32_t>(std::min<uint64_t>(
+        static_cast<uint64_t>(sec) * 1000ULL, 0xFFFFFFFFULL));
 }
 
 void ReminderManager::update() {
     if (!_enabled || _intervalMs == 0) return;
-
+    const uint32_t now = hal_millis();
     if (_alerting) {
-        const bool cupLifted = _appState && (_appState->cupState == CupState::NO_CUP);
-        const bool timedOut  = (millis() - _alertStartMs >= _alertTimeoutMs);
-
+        const bool cupLifted = _appState && _appState->cupState == CupState::NO_CUP;
+        const bool timedOut = now - _alertStartMs >= _alertTimeoutMs;
         if (cupLifted || timedOut) {
-            _alerting       = false;
+            _alerting = false;
             _beepCycleEndMs = 0;
-            _lastEventMs    = millis();
+            _lastEventMs = now;
             if (_buzzer) _buzzer->stop();
-            Serial.printf("[Reminder] Alert stopped (%s)\n",
-                          cupLifted ? "cup lifted" : "timeout");
+            LOG_INFO("Reminder", "alert stopped (%s)", cupLifted ? "cup lifted" : "timeout");
             return;
         }
-
-        // Keep looping the beep pattern with a gap between cycles
         if (_buzzer && !_buzzer->isPlaying()) {
-            if (_beepCycleEndMs == 0) {
-                _beepCycleEndMs = millis();
-            } else if (millis() - _beepCycleEndMs >= BEEP_CYCLE_GAP_MS) {
+            if (_beepCycleEndMs == 0) _beepCycleEndMs = now;
+            else if (now - _beepCycleEndMs >= BEEP_CYCLE_GAP_MS) {
                 _beepCycleEndMs = 0;
                 _buzzer->play(BeepPattern::REMINDER);
             }
         }
         return;
     }
-
-    // Overdue: interval fired while cup was away; alert as soon as cup is stable
     if (_overdueWhileAway) {
         if (_cupIsStable()) {
             _overdueWhileAway = false;
-            _alerting         = true;
-            _alertStartMs     = millis();
-            Serial.println("[Reminder] Time to drink water! (overdue)");
+            _alerting = true;
+            _alertStartMs = now;
+            LOG_INFO("Reminder", "time to drink water (overdue)");
             if (_buzzer) _buzzer->play(BeepPattern::REMINDER);
         }
         return;
     }
-
-    if (millis() - _lastEventMs >= _intervalMs) {
+    if (now - _lastEventMs >= _intervalMs) {
         if (!_cupIsStable()) {
             _overdueWhileAway = true;
             return;
         }
-        _alerting     = true;
-        _alertStartMs = millis();
-        Serial.println("[Reminder] Time to drink water!");
+        _alerting = true;
+        _alertStartMs = now;
+        LOG_INFO("Reminder", "time to drink water");
         if (_buzzer) _buzzer->play(BeepPattern::REMINDER);
     }
 }
 
 void ReminderManager::resetTimer() {
     if (_alerting && _buzzer) _buzzer->stop();
-    _lastEventMs      = millis();
-    _alerting         = false;
-    _beepCycleEndMs   = 0;
+    _lastEventMs = hal_millis();
+    _alerting = false;
+    _beepCycleEndMs = 0;
     _overdueWhileAway = false;
 }
 
-void ReminderManager::setBuzzer(BuzzerController* buz) {
-    _buzzer = buz;
-}
+void ReminderManager::setBuzzer(BuzzerController* buz) { _buzzer = buz; }
 
 bool ReminderManager::_cupIsStable() const {
     if (!_appState) {
-        Serial.println("[Reminder][WARN] _appState not set");
-        return true;  // fail-open: assume cup present
+        LOG_WARN("Reminder", "app state not set");
+        return true;
     }
     return _appState->cupState == CupState::CUP_STABLE;
 }
 
 uint32_t ReminderManager::getNextReminderSec() const {
-    if (!_enabled || _intervalMs == 0) return 0;
-    if (_alerting || _overdueWhileAway) return 0;
-    const uint32_t elapsed = millis() - _lastEventMs;
+    if (!_enabled || _intervalMs == 0 || _alerting || _overdueWhileAway) return 0;
+    const uint32_t elapsed = hal_millis() - _lastEventMs;
     if (elapsed >= _intervalMs) return 0;
     return (_intervalMs - elapsed) / 1000;
 }

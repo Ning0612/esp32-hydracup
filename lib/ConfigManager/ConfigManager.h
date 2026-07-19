@@ -1,6 +1,7 @@
 #pragma once
-#include <Arduino.h>
-#include <Preferences.h>
+
+#include <string>
+
 #include "app_types.h"
 
 class ConfigManager {
@@ -8,11 +9,9 @@ public:
     void load(AppConfig& cfg);
     bool save(const AppConfig& cfg);
     bool saveCalibration(float factor, long offset);
-    void saveWifi(const String& ssid, const String& password);
+    bool saveWifi(const std::string& ssid, const std::string& password);
     void clear();
 
 private:
-    Preferences _prefs;
-
     void _applyDefaults(AppConfig& cfg);
 };

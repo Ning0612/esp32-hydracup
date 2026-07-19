@@ -1,5 +1,6 @@
 #pragma once
 #include <atomic>
+#include <string>
 #include "app_types.h"
 
 struct AppState {
@@ -26,5 +27,5 @@ struct AppState {
     bool               mqttConfigured = false;
     std::atomic<bool>  mqttConnected{false};
 
-    String   ipAddress;
+    std::string ipAddress;
 };

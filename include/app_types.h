@@ -1,5 +1,6 @@
 #pragma once
-#include <Arduino.h>
+#include <cstdint>
+#include <string>
 #include "config.h"
 
 enum class AppMode : uint8_t {
@@ -18,10 +19,10 @@ enum class CupState : uint8_t {
 };
 
 struct AppConfig {
-    String   wifiSsid;
-    String   wifiPassword;
+    std::string wifiSsid;
+    std::string wifiPassword;
 
-    String   discordWebhookUrl;
+    std::string discordWebhookUrl;
 
     bool     reminderEnabled          = true;
     uint32_t reminderIntervalMin      = 60;
@@ -34,18 +35,18 @@ struct AppConfig {
     uint8_t  buzzerVolumePercent = 50;
 
     bool     ntpEnabled          = true;
-    String   ntpServer1          = "pool.ntp.org";
-    String   ntpServer2          = "time.google.com";
-    String   timezone            = "Asia/Taipei";
+    std::string ntpServer1       = "pool.ntp.org";
+    std::string ntpServer2       = "time.google.com";
+    std::string timezone         = "Asia/Taipei";
     int      timezoneOffsetSec   = 8 * 3600;
     int      daylightOffsetSec   = 0;
 
     bool     mqttEnabled         = false;
-    String   mqttBrokerHost;
+    std::string mqttBrokerHost;
     uint16_t mqttBrokerPort      = DEFAULT_MQTT_BROKER_PORT;
-    String   mqttUsername;
-    String   mqttPassword;
-    String   mqttClientId        = DEFAULT_MQTT_CLIENT_ID;
+    std::string mqttUsername;
+    std::string mqttPassword;
+    std::string mqttClientId     = DEFAULT_MQTT_CLIENT_ID;
     uint16_t mqttHeartbeatSec    = DEFAULT_MQTT_HEARTBEAT_SEC;
 
     float    calibrationFactor        = 1.0f;
@@ -56,8 +57,8 @@ struct AppConfig {
     float    minDrinkDeltaMl          = 20.0f;
     float    maxDrinkDeltaMl          = 500.0f;
 
-    String   apSsid              = "WaterCupTracker-Setup";
-    String   apPassword          = "12345678";
+    std::string apSsid           = "WaterCupTracker-Setup";
+    std::string apPassword       = "12345678";
 
-    String   adminPasswordHash;
+    std::string adminPasswordHash;
 };

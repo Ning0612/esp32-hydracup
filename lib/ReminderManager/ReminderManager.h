@@ -1,5 +1,8 @@
 #pragma once
-#include <Arduino.h>
+
+#include <algorithm>
+#include <cstdint>
+
 #include "AppState.h"
 #include "BuzzerController.h"
 
@@ -9,39 +12,23 @@ public:
     void update();
     void resetTimer();
     void setBuzzer(BuzzerController* buz);
-    void setAppState(AppState* state)  { _appState = state; }
-    void setEnabled(bool en) {
-        _enabled = en;
-        if (!en) {
-            _alerting         = false;
-            _beepCycleEndMs   = 0;
-            _overdueWhileAway = false;
-            if (_buzzer) _buzzer->stop();
-        }
-    }
-    void setIntervalMin(uint32_t min) {
-        const uint64_t ms = (uint64_t)min * 60000ULL;
-        _intervalMs = (ms > 0xFFFFFFFFULL) ? 0xFFFFFFFFU : (uint32_t)ms;
-    }
-    void setAlertTimeoutSec(uint32_t sec) {
-        _alertTimeoutMs = (uint32_t)min((uint64_t)sec * 1000ULL, (uint64_t)0xFFFFFFFFU);
-    }
-
+    void setAppState(AppState* state) { _appState = state; }
+    void setEnabled(bool en);
+    void setIntervalMin(uint32_t min);
+    void setAlertTimeoutSec(uint32_t sec);
     uint32_t getNextReminderSec() const;
-
     static constexpr uint32_t BEEP_CYCLE_GAP_MS = 800;
 
 private:
-    BuzzerController* _buzzer          = nullptr;
-    AppState*         _appState        = nullptr;
-    uint32_t          _intervalMs      = 60UL * 60000UL;
-    uint32_t          _alertTimeoutMs  = 60000UL;
-    bool              _enabled         = true;
-    uint32_t          _lastEventMs     = 0;
-    bool              _alerting        = false;
-    uint32_t          _alertStartMs    = 0;
-    uint32_t          _beepCycleEndMs  = 0;
-    bool              _overdueWhileAway = false;
-
     bool _cupIsStable() const;
+    BuzzerController* _buzzer = nullptr;
+    AppState* _appState = nullptr;
+    uint32_t _intervalMs = 60UL * 60000UL;
+    uint32_t _alertTimeoutMs = 60000UL;
+    bool _enabled = true;
+    uint32_t _lastEventMs = 0;
+    bool _alerting = false;
+    uint32_t _alertStartMs = 0;
+    uint32_t _beepCycleEndMs = 0;
+    bool _overdueWhileAway = false;
 };

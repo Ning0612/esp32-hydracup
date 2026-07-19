@@ -1,10 +1,10 @@
 #pragma once
 
-#include <Arduino.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/queue.h>
 #include <freertos/semphr.h>
 #include <atomic>
+#include <string>
 #include "app_types.h"
 
 struct RuntimeSnapshot {
@@ -79,7 +79,7 @@ public:
     bool begin();
 
     void publishControl(const RuntimeSnapshot& snapshot);
-    void publishConnectivity(bool wifiConnected, const String& ipAddress);
+    void publishConnectivity(bool wifiConnected, const std::string& ipAddress);
     RuntimeSnapshot snapshot() const;
 
     // Single requester only: DashboardServer owns the synchronous result queue.
