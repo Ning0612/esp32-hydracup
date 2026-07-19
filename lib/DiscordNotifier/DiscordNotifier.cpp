@@ -58,7 +58,7 @@ bool DiscordNotifier::notifyDailySummary(float totalMl, uint32_t drinkCount, con
 }
 
 void DiscordNotifier::_send(TaskParam* message) {
-    bool ok = false; esp_http_client_config_t config = {}; config.url = message->webhookUrl; config.cert_pem = DISCORD_ROOT_CA; config.timeout_ms = 10000; esp_http_client_handle_t client = esp_http_client_init(&config);
+    bool ok = false; esp_http_client_config_t config = {}; config.url = message->webhookUrl; config.method = HTTP_METHOD_POST; config.cert_pem = DISCORD_ROOT_CA; config.timeout_ms = 10000; esp_http_client_handle_t client = esp_http_client_init(&config);
     if (client) { esp_http_client_set_header(client, "Content-Type", "application/json"); esp_http_client_set_post_field(client, message->body, std::strlen(message->body)); const esp_err_t error = esp_http_client_perform(client); const int status = esp_http_client_get_status_code(client); ok = error == ESP_OK && status >= 200 && status < 300; if (!ok) LOG_WARN("Discord", "POST failed error=%s status=%d", esp_err_to_name(error), status); esp_http_client_cleanup(client); } else { LOG_WARN("Discord", "client init failed"); }
     if (_state) _state->webhookLastOk.store(ok);
     LOG_INFO("Discord", "POST %s", ok ? "OK" : "FAILED"); delete message;
