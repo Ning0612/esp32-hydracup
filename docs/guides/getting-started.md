@@ -17,7 +17,7 @@
 
 ## 步驟 1：取得程式碼
 
-```bash
+```powershell
 git clone https://github.com/<your-user>/esp32-hydracup.git
 cd esp32-hydracup
 ```
@@ -37,21 +37,21 @@ cd esp32-hydracup
 
 ## 步驟 3：首次燒錄
 
-```bash
-# 建置韌體
-pio run
+```powershell
+# 建置 ESP-IDF 韌體
+pio run -e esp32dev
 
-# 燒錄韌體（含分割表）
-pio run --target upload
+# 燒錄韌體、bootloader 與分割表
+pio run -e esp32dev --target upload
 
 # 燒錄 Web UI 靜態資源至 webfs
-pio run --target uploadfs
+pio run -e esp32dev --target uploadfs
 ```
 
 驗證 `uploadfs` 目標位址正確：
 
 ```bash
-pio run -v -t uploadfs | grep address
+pio run -e esp32dev -v -t uploadfs | Select-String address
 # 預期輸出：address 0x290000, size 0x60000
 ```
 
@@ -59,7 +59,7 @@ pio run -v -t uploadfs | grep address
 
 ## 步驟 4：設定 WiFi
 
-1. ESP32 上電後，蜂鳴器播放 `AP_MODE` 音效
+1. ESP32 上電後，若沒有可用 WiFi 設定或 STA 連線逾時，蜂鳴器播放 `AP_MODE` 音效
 2. 在手機或電腦的 WiFi 列表中找到 `WaterCupTracker-Setup`
 3. 輸入密碼 `12345678` 連線
 4. 開啟瀏覽器前往 `http://192.168.4.1`

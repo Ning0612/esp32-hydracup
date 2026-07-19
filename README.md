@@ -2,12 +2,16 @@
 
 [![PlatformIO](https://img.shields.io/badge/PlatformIO-espressif32%406.10-orange?logo=platformio)](https://platformio.org)
 [![ESP32](https://img.shields.io/badge/Board-ESP32-red?logo=espressif)](https://www.espressif.com/en/products/socs/esp32)
-[![Arduino](https://img.shields.io/badge/Framework-Arduino-teal?logo=arduino)](https://www.arduino.cc)
+[![ESP-IDF](https://img.shields.io/badge/Framework-ESP--IDF-blue?logo=espressif)](https://docs.espressif.com/projects/esp-idf/en/latest/esp32/)
 [![Version](https://img.shields.io/badge/Version-0.3.0-brightgreen)](include/version.h)
 [![CI](https://github.com/Ning0612/esp32-hydracup/actions/workflows/ci.yml/badge.svg)](https://github.com/Ning0612/esp32-hydracup/actions/workflows/ci.yml)
 [![License](https://img.shields.io/badge/License-MIT-yellow)](LICENSE)
 
 ESP32-based smart water cup tracker. Measures cup weight via HX711, detects drink events, sends Discord Webhook notifications, and provides a local web dashboard.
+
+The firmware runs on native ESP-IDF/FreeRTOS through PlatformIO. Hardware access uses
+ESP-IDF drivers; the web server, MQTT, Discord HTTPS client, NVS, and LittleFS are
+all initialized from `app_main()` without the Arduino framework.
 
 ## Project Status
 
@@ -116,15 +120,15 @@ See [docs/hardware.md](docs/hardware.md) for wiring details and BOM.
 git clone https://github.com/<your-user>/esp32-hydracup.git
 cd esp32-hydracup
 
-# 2. Build firmware
-pio run
+# 2. Build firmware (ESP-IDF environment)
+pio run -e esp32dev
 
 # 3. Flash firmware + web assets (first time)
-pio run --target upload
-pio run --target uploadfs
+pio run -e esp32dev --target upload
+pio run -e esp32dev --target uploadfs
 
-# 4. Power on — device broadcasts "WaterCupTracker-Setup" AP
-#    Connect to it and open http://192.168.4.1
+# 4. If WiFi is not configured or the STA connection times out, the device
+#    broadcasts "WaterCupTracker-Setup" AP. Connect and open http://192.168.4.1
 #    Enter your WiFi credentials and save
 
 # 5. After reboot, find the device IP and open http://<ip>
@@ -138,13 +142,14 @@ See [docs/guides/getting-started.md](docs/guides/getting-started.md) for the com
 
 ```
 ┌─────────────────── Normal Mode ───────────────────────┐
-│  TaskControl (Core 1, 10 ms)                          │
+│  hydracup_control (Core 1, 10 ms)                     │
 │  ├─ ScaleManager → DrinkDetector                      │
 │  ├─ Reminder / Buzzer / Display / Time                │
 │  └─ RuntimeSnapshot + ControlCommand Queue             │
 │                                                       │
-│  loopTask → Dashboard / ConfigPortal / health         │
-│  workers  → Discord / MQTT / Log / counter NVS        │
+│  hydracup_service (50 ms) → WiFi / MQTT / health      │
+│  esp_http_server task → Dashboard / REST API           │
+│  workers → Discord / MQTT / Log / counter NVS         │
 └───────────────────────────────────────────────────────┘
 
 ┌────── AP Mode (no WiFi configured) ──────────────────┐

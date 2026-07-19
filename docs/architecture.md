@@ -2,14 +2,14 @@
 
 ## 系統架構
 
-HydraCup 在 ESP32 Arduino/FreeRTOS 上運行，分為兩個互斥模式。Arduino `loopTask`
-負責 Web 與健康監督；固定在 Arduino core 的高優先 `hydracup_control` task 負責感測與
-即時控制：
+HydraCup 以 PlatformIO + ESP-IDF 5.x 的 native FreeRTOS runtime 運行，分為兩個互斥模式。
+`app_main()` 負責初始化硬體、NVS、LittleFS、網路與服務；固定在 Core 1 的高優先
+`hydracup_control` task 負責感測與即時控制：
 
 ```
 ┌────────────────────────────────────────────────────────┐
 │                    BOOT                                │
-│  Serial → LittleFS → NVS/Config → OLED → HX711        │
+│  app_main → NVS → webfs/logfs → Config → OLED/HX711   │
 │  → Buzzer → WiFi configured?                          │
 │        No  → AP_MODE (ConfigPortal)                   │
 │        Yes → STA connect → OK? → NORMAL : AP_MODE     │
@@ -21,7 +21,7 @@ HydraCup 在 ESP32 Arduino/FreeRTOS 上運行，分為兩個互斥模式。Ardui
 └────────────────────────────────────────────────────────┘
 
 ┌────────── Normal Mode ─────────────────────────────────┐
-│  TaskControl (10 ms, Core 1)                           │
+│  hydracup_control (10 ms, Core 1)                     │
 │  ScaleManager → DrinkDetector                          │
 │                     ├─→ EventLogger                    │
 │                     ├─→ DiscordNotifier                │
@@ -33,7 +33,8 @@ HydraCup 在 ESP32 Arduino/FreeRTOS 上運行，分為兩個互斥模式。Ardui
 │  ├─ DisplayManager / TimeManager                       │
 │  └─ DailySummaryManager                                │
 │                                                        │
-│  loopTask: DashboardServer + WiFi health               │
+│  hydracup_service (50 ms): WiFi / MQTT / health        │
+│  esp_http_server task: DashboardServer                 │
 │  workers: MQTT / Discord / EventLogger / counter NVS   │
 └────────────────────────────────────────────────────────┘
 ```
@@ -41,13 +42,13 @@ HydraCup 在 ESP32 Arduino/FreeRTOS 上運行，分為兩個互斥模式。Ardui
 ### 設計約束
 
 - `hydracup_control` 是 Scale、Detector、Reminder、Buzzer、Display、Time 的單一 owner
-- `loopTask` 不直接存取上述模組的 mutable state；Dashboard 透過 snapshot / command 溝通
-- 絕對禁止在 `loop()` 或任何 `update()` 中使用 `delay()`
-- 所有計時使用 `millis()`
+- HTTP handler 不直接驅動控制模組；Dashboard 透過 snapshot / command 溝通
+- 不使用 Arduino `setup()` / `loop()`；控制與服務 task 都必須保持非阻塞
+- 所有時間取值使用 `hal_millis()` / `hal_micros()`（底層為 `esp_timer`），等待使用 `vTaskDelay`
 - Discord 與 MQTT 各使用持久 FreeRTOS worker；兩者不共用阻塞 task
 - tare 是 10 筆、每 100 ms 一筆的非阻塞狀態機；期間暫停飲水偵測
 - NVS 操作透過共用 mutex 序列化；LogFS 讀寫也有獨立 mutex
-- counter restore worker 只載入 POD，由 TaskControl 套用；跨日資料即使非午夜開機也會立即結算
+- counter restore worker 只載入 POD，由 `hydracup_control` 套用；跨日資料即使非午夜開機也會立即結算
 - Daily settlement 等待 counter save ack，再由 storage worker 寫 settled marker，控制 task 不等待 flash
 
 ---
@@ -62,9 +63,9 @@ HydraCup 在 ESP32 Arduino/FreeRTOS 上運行，分為兩個互斥模式。Ardui
 | `ConfigPortal` | AP Mode HTTP 伺服器（192.168.4.1），WiFi 設定 |
 | `DashboardServer` | Normal Mode HTTP 伺服器，儀表板 + REST API |
 | `ScaleManager` | HX711 取樣、移動平均濾波、秤台校正 |
-| `DrinkDetectorCore` | 不依賴 Arduino 的 6 態飲水偵測核心，輸出飲水/補水事件 |
+| `DrinkDetectorCore` | framework-independent 的 6 態飲水偵測核心，輸出飲水/補水事件 |
 | `DrinkDetector` | ESP32 adapter：對接 ScaleManager、AppState、每日計數器與通知管道 |
-| `ReminderManager` | millis 計時提醒，飲水後重置 |
+| `ReminderManager` | `hal_millis()` 計時提醒，飲水後重置 |
 | `BuzzerController` | LEDC PWM 非阻塞蜂鳴佇列（7 種模式） |
 | `DisplayManager` | SSD1306 OLED 輪播（2 頁，各 4 秒），自動睡眠 |
 | `DiscordNotifier` | 非同步 HTTPS POST 至 Discord Webhook |
@@ -72,31 +73,36 @@ HydraCup 在 ESP32 Arduino/FreeRTOS 上運行，分為兩個互斥模式。Ardui
 | `TimeManager` | NTP 時間同步；提供 ISO-8601 時戳 |
 | `DailySummaryManager` | 每日午夜聚合統計並送出 Discord 摘要 |
 | `RuntimeCoordinator` | 一致 runtime snapshot、control command/result Queue |
-| `StorageLock` | 跨 task 序列化 Preferences/NVS 操作 |
+| `StorageLock` | 跨 task 序列化 NVS 操作 |
+| `Hal` | `esp_timer` 時間、FreeRTOS delay 與 ESP-IDF logging wrapper |
+| `HttpAuth` | session token、CSRF、PBKDF2 密碼雜湊與 constant-time 比對 |
+| `HttpServerSupport` | `esp_http_server` request、header、檔案與 response 共用工具 |
 
 ---
 
 ## 開機流程
 
 ```
-1. Serial.begin(115200)
-2. LittleFS.begin(webfs)          → 靜態資源
-3. LittleFS.begin(logfs)          → 日誌分割區（首次自動格式化）
-4. ConfigManager.load(cfg)        → 從 NVS 讀取設定
-5. OLED.init()                    → 失敗則記錄並繼續
-6. HX711.init()                   → 失敗則記錄並繼續
-7. BuzzerController.init()        → BOOT_OK 蜂鳴
-8. WiFiManager.connect(cfg)
+1. `app_main()` 開始，ESP-IDF logging 以 115200 baud 輸出
+2. `nvs_flash_init()`             → NVS 設定與計數器
+3. `esp_vfs_littlefs_register()`  → `/webfs` 與 `/logfs`
+4. `ConfigManager.load(cfg)`      → 從 NVS 讀取設定
+5. `DisplayManager.init()`        → 失敗則記錄並繼續
+6. `ScaleManager.init()`          → 失敗則記錄並繼續
+7. `BuzzerController.init()`      → 準備開機提示音
+8. `WiFiManager.connectSTA()`
    ├─ WiFi SSID 空白 → AP_MODE
    ├─ 連線失敗       → AP_MODE
    └─ 連線成功       → NORMAL
-9. 建立 RuntimeCoordinator 與背景 workers
-10. 建立 `hydracup_control`；建立失敗時進入 degraded loop control，tare/calibrate API 停用
-11. NORMAL: DashboardServer 由 loopTask 服務
-    AP_MODE: ConfigPortal 由 loopTask 服務
+9. NORMAL：初始化 NTP、Discord、MQTT、EventLogger、DailySummary 與 DashboardServer
+10. AP_MODE：初始化 ConfigPortal（HTTP server @ `192.168.4.1`）
+11. 建立 `hydracup_control`（Core 1）與 `hydracup_service` task
+12. `esp_http_server` 自己處理 Dashboard／ConfigPortal request callback
 ```
 
-外設（OLED、HX711）初始化失敗時**不中斷開機**，僅記錄錯誤並設 `AppState.oledOk = false` / `hx711Ok = false`。
+外設（OLED、HX711）初始化失敗時**不中斷開機**，僅記錄錯誤並設
+`AppState.oledOk = false` / `hx711Ok = false`。LittleFS mount 使用
+`format_if_mount_failed = false`，因此 mount 失敗時不會自動格式化或清除資料。
 
 ---
 

@@ -1,110 +1,93 @@
 # Build & Flash
 
-## PlatformIO 指令
+## 開發環境
 
-> **Windows Bash 工具注意**：`pio` 未在 Bash PATH 中，請使用完整路徑：  
-> `~/.platformio/penv/Scripts/pio.exe`（PowerShell：`$env:USERPROFILE\.platformio\penv\Scripts\pio.exe`）
+HydraCup 使用 PlatformIO 的兩個 environment：
+
+- `esp32dev`：ESP32 + native ESP-IDF/FreeRTOS firmware，`framework = espidf`
+- `native`：主機端 C++17 + Unity 測試，執行不依賴硬體的 `DrinkDetectorCore` 測試
+
+目前 PlatformIO environment 設定為 `espressif32@~6.10.0`，由 PlatformIO 管理對應的
+ESP-IDF toolchain。若 Windows 的 `pio` 不在 PATH，可使用目前機器的完整路徑：
+`C:\Users\Ning\.platformio\penv\Scripts\pio.exe`；其他電腦請替換使用者名稱。
 
 ## CI
 
 GitHub Actions 會在 push、pull request 與手動 workflow dispatch 時執行
 `.github/workflows/ci.yml`：
 
-- 安裝 PlatformIO
-- 執行 `pio run -e esp32dev`
+- 建置 `pio run -e esp32dev`
+- 執行 `pio test -e native`
 
-CI 只驗證韌體可建置，不會燒錄裝置、上傳 LittleFS、連接 HX711/OLED，
-也不會執行硬體或 Discord/MQTT 整合測試。
+CI 不會燒錄裝置、上傳 Web 資源、連接 HX711/OLED，也不會執行硬體或 Discord/MQTT
+整合測試。
 
-### 常用指令
+## 常用指令
 
-```bash
-# 建置韌體
-pio run
+以下指令在 repository 根目錄執行。PowerShell 請逐行執行，不要把多個命令串在同一行。
 
-# 燒錄韌體（含分割表）
-pio run --target upload
+```powershell
+# 建置 ESP-IDF firmware
+pio run -e esp32dev
 
-# 燒錄 Web UI 靜態資源（data/ → webfs 分割區）
-pio run --target uploadfs
+# 執行 native host-side tests
+pio test -e native
 
-# 開啟串列監控（115200 baud）
-pio device monitor --baud 115200
+# 清除 ESP32 建置快取
+pio run -e esp32dev --target clean
 
-# 建置 + 燒錄 + 監控（一鍵流程）
-pio run --target upload && pio device monitor --baud 115200
+# 燒錄 firmware、bootloader 與 partition table
+pio run -e esp32dev --target upload --upload-port COM5
 
-# 清除建置快取
-pio run --target clean
+# 燒錄 data/ 到 webfs 分割區
+pio run -e esp32dev --target uploadfs --upload-port COM5
+
+# 開啟 Serial monitor
+pio device monitor -e esp32dev --port COM5 --baud 115200
 ```
 
----
+`upload` 與 `uploadfs` 是兩個不同步驟：firmware 不會自動包含 `data/` 靜態資源。
+若 `pio` 不在 PATH，可將上述命令中的 `pio` 替換為 PlatformIO 虛擬環境內的執行檔。
 
 ## 燒錄速率
 
-`platformio.ini` 設定 `upload_speed = 921600`（快速燒錄）。  
-若燒錄不穩定，可暫時降為 `460800` 或 `115200`。
-
----
+`platformio.ini` 設定 `upload_speed = 921600`，monitor baud 為 `115200`。若燒錄不穩定，
+可暫時將 `upload_speed` 降為 `460800` 或 `115200`。
 
 ## uploadfs 位址驗證
 
-確認 `uploadfs` 目標正確寫入 `webfs` 分割區（0x290000）：
+`board_build.filesystem = littlefs` 會將 `data/` 寫入第一個符合 PlatformIO filesystem
+目標的資料分割區，即 `webfs`（`0x290000`、`0x60000` bytes）。PowerShell 可用：
 
-```bash
-pio run -v -t uploadfs | grep address
-# 預期輸出：address 0x290000, size 0x60000
+```powershell
+pio run -e esp32dev -v --target uploadfs | Select-String address
 ```
 
-若位址不符，請確認 `partitions.csv` 未被修改。
+預期位址為 `0x290000`。若位址不符，先確認 `partitions.csv` 與 `platformio.ini` 沒有被
+修改。
 
----
+## 分割區與資料保護
 
-## 首次部署後的分割表變更
+| 分割區 | 偏移 | 大小 | 用途 |
+|-------|------|------|------|
+| `nvs` | `0x9000` | 20 KB | WiFi、AppConfig、管理密碼雜湊 |
+| `app0` / `app1` | `0x10000` / `0x150000` | 各 1.25 MB | OTA firmware slot |
+| `webfs` | `0x290000` | 384 KB | `/webfs` 靜態 Web 資源 |
+| `logfs` | `0x2F0000` | 1 MB | `/logfs/logs/` JSONL 飲水日誌 |
 
-若分割表（`partitions.csv`）有異動，需完整重刷：
+- `uploadfs` 只寫入 `webfs`，不會影響 `logfs` 歷史日誌。
+- firmware 以 `esp_vfs_littlefs_register()` 掛載 `/webfs` 與 `/logfs`。
+- `logfs` 使用 `format_if_mount_failed = false`；mount 失敗時不會自動格式化或清除資料。
+- 完整 erase 或變更分割區位置可能使 NVS、Web 資源與日誌失效；執行前應先備份需要保留的資料。
 
-1. `pio run --target upload` — 燒錄韌體 + 新分割表（舊資料會被清除）
-2. `pio run --target uploadfs` — 燒錄 Web 資源至 webfs
-3. `logfs` 在首次開機時自動格式化，**不需手動操作**
+## ESP-IDF 相依元件
 
-> 分割表變更會清除 NVS 的所有設定（WiFi、AppConfig）。重刷後需重新設定 WiFi 與其他參數。
+專案不再使用 Arduino `lib_deps`。韌體相依元件由 `src/CMakeLists.txt` 與
+`src/idf_component.yml` 管理，包含：
 
----
+- ESP-IDF：`driver`、`esp_event`、`esp_netif`、`esp_wifi`、`esp_http_server`、
+  `esp_http_client`、`mqtt`、`nvs_flash`、`json`、`mbedtls`、FreeRTOS 等
+- registry component：`joltwallet/littlefs`（`>=1.14.6,<2.0.0`）
 
-## 雙分割區說明
-
-| 分割區 | 標籤 | 偏移 | 大小 | 用途 |
-|-------|------|------|------|------|
-| webfs | spiffs | 0x290000 | 384 KB | 靜態 Web 資源（`uploadfs` 目標） |
-| logfs | — | 0x2F0000 | 1 MB | 飲水事件 JSONL 日誌（不受 `uploadfs` 影響） |
-
-`uploadfs` 只寫 webfs，不影響 logfs 中的歷史飲水記錄。
-
----
-
-## 建置旗標
-
-`platformio.ini` 中的關鍵設定：
-
-```ini
-build_flags =
-    -D CORE_DEBUG_LEVEL=3    # 啟用詳細 Serial 輸出（除錯用）
-    -I include               # 讓 lib/ 找到 include/ 下的標頭
-```
-
-生產環境可將 `CORE_DEBUG_LEVEL` 降為 `1` 或 `0` 以減少輸出。
-
----
-
-## 相依函式庫
-
-```ini
-lib_deps =
-    bogde/HX711                    # 稱重 IC 驅動
-    bblanchon/ArduinoJson          # JSON 序列化
-    adafruit/Adafruit SSD1306      # OLED 驅動
-    adafruit/Adafruit GFX Library  # 繪圖底層庫
-```
-
-PlatformIO 會在首次建置時自動下載。若在離線環境使用，需先執行 `pio pkg install`。
+不要再安裝或新增 `bogde/HX711`、`ArduinoJson`、`Adafruit SSD1306`、`Adafruit GFX`
+等 Arduino library；目前硬體驅動與 JSON 處理使用 ESP-IDF API。

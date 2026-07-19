@@ -27,7 +27,7 @@ logfs partition (0x2F0000, 1 MB)
 | 欄位 | 型別 | 說明 |
 |------|------|------|
 | `ts` | string | ISO-8601 時間戳，含時區偏移（NTP 同步後）；未同步時為 `"boot+<ms>ms"` 格式（例：`"boot+12345ms"`） |
-| `ml` | number | 本次飲水量（公克，約等於毫升）；格式為無小數整數（`%.0f`） |
+| `ml` | number | 本次飲水量（毫升）；格式為無小數整數（`%.0f`） |
 | `total` | number | 當日累計飲水量（ml）；格式為無小數整數（`%.0f`） |
 
 ### 範例
@@ -42,7 +42,7 @@ logfs partition (0x2F0000, 1 MB)
 ### 注意事項
 
 - 追加寫入（`FILE_APPEND`），不覆寫
-- `logfs` 分割區首次開機自動格式化（不需手動操作）
+- `logfs` mount 使用 `format_if_mount_failed = false`；首次未格式化或損毀時不會自動清除資料
 - `uploadfs` 指令只觸及 `webfs`，不影響日誌資料
 - `/api/logs?month=YYYY-MM` 可透過 Web API 讀取全月記錄
 - `skipped` 欄位回報無法解析的損毀行數
@@ -51,7 +51,9 @@ logfs partition (0x2F0000, 1 MB)
 
 ## NVS Schema
 
-ESP32 Preferences 儲存於 NVS flash 分割區（0x9000，20 KB）。
+ESP-IDF `nvs_flash` 儲存於 NVS flash 分割區（0x9000，20 KB）。`ConfigManager` 使用
+`nvs_open()`、`nvs_get_*()`、`nvs_set_*()` 與 `nvs_commit()` 管理資料；所有存取都由
+`StorageLock` 序列化。
 
 ### 命名空間：`water_config`
 
@@ -59,33 +61,40 @@ ESP32 Preferences 儲存於 NVS flash 分割區（0x9000，20 KB）。
 
 | NVS Key | 型別 | 預設值 | 對應 AppConfig 欄位 |
 |---------|------|-------|-------------------|
-| `wifi_ssid` | String | `""` | `wifiSsid` |
-| `wifi_pass` | String | `""` | `wifiPassword` |
-| `webhook_url` | String | `""` | `discordWebhookUrl` |
-| `rem_en` | bool | `true` | `reminderEnabled` |
-| `rem_interval` | UInt | `60` | `reminderIntervalMin` |
-| `rem_alert_to` | UInt | `60` | `reminderAlertTimeoutSec` |
-| `daily_goal` | UInt | `2000` | `dailyGoalMl` |
-| `buz_en` | bool | `true` | `buzzerEnabled` |
-| `buz_freq` | UInt | `2000` | `buzzerFrequencyHz` |
-| `buz_dur` | UInt | `150` | `buzzerDurationMs` |
-| `buz_vol` | UInt | `50` | `buzzerVolumePercent` |
-| `ntp_en` | bool | `true` | `ntpEnabled` |
-| `ntp_srv1` | String | `"pool.ntp.org"` | `ntpServer1` |
-| `ntp_srv2` | String | `"time.google.com"` | `ntpServer2` |
-| `tz` | String | `"Asia/Taipei"` | `timezone` |
-| `tz_off` | Int | `28800` | `timezoneOffsetSec` |
-| `dst_off` | Int | `0` | `daylightOffsetSec` |
-| `cal_factor` | Float | `1.0` | `calibrationFactor` |
-| `tare_offset` | Long | `0` | `tareOffset` |
-| `cup_thresh` | Float | `80.0` | `cupPresentThresholdGram` |
-| `stable_tol` | Float | `3.0` | `stableToleranceGram` |
-| `stable_dur` | UInt | `3000` | `stableDurationMs` |
-| `min_drink` | Float | `20.0` | `minDrinkDeltaMl` |
-| `max_drink` | Float | `500.0` | `maxDrinkDeltaMl` |
-| `ap_ssid` | String | `"WaterCupTracker-Setup"` | `apSsid` |
-| `ap_pass` | String | `"12345678"` | `apPassword` |
-| `admin_hash` | String | `""` | `adminPasswordHash` |
+| `wifi_ssid` | string | `""` | `wifiSsid` |
+| `wifi_pass` | string | `""` | `wifiPassword` |
+| `webhook_url` | string | `""` | `discordWebhookUrl` |
+| `rem_en` | u8 | `1` | `reminderEnabled` |
+| `rem_interval` | u32 | `60` | `reminderIntervalMin` |
+| `rem_alert_to` | u32 | `60` | `reminderAlertTimeoutSec` |
+| `daily_goal` | u32 | `2000` | `dailyGoalMl` |
+| `buz_en` | u8 | `1` | `buzzerEnabled` |
+| `buz_freq` | u32 | `2000` | `buzzerFrequencyHz` |
+| `buz_dur` | u32 | `150` | `buzzerDurationMs` |
+| `buz_vol` | u32 | `50` | `buzzerVolumePercent` |
+| `ntp_en` | u8 | `1` | `ntpEnabled` |
+| `ntp_srv1` | string | `"pool.ntp.org"` | `ntpServer1` |
+| `ntp_srv2` | string | `"time.google.com"` | `ntpServer2` |
+| `tz` | string | `"Asia/Taipei"` | `timezone` |
+| `tz_off` | i32 | `28800` | `timezoneOffsetSec` |
+| `dst_off` | i32 | `0` | `daylightOffsetSec` |
+| `mqtt_en` | u8 | `0` | `mqttEnabled` |
+| `mqtt_host` | string | `""` | `mqttBrokerHost` |
+| `mqtt_port` | u32 | `1883` | `mqttBrokerPort` |
+| `mqtt_user` | string | `""` | `mqttUsername` |
+| `mqtt_pass` | string | `""` | `mqttPassword` |
+| `mqtt_cid` | string | `"hydracup-device"` | `mqttClientId` |
+| `mqtt_hb` | u32 | `60` | `mqttHeartbeatSec` |
+| `cal_factor` | blob(float) | `1.0` | `calibrationFactor` |
+| `tare_offset` | i32 | `0` | `tareOffset` |
+| `cup_thresh` | blob(float) | `80.0` | `cupPresentThresholdGram` |
+| `stable_tol` | blob(float) | `3.0` | `stableToleranceGram` |
+| `stable_dur` | u32 | `3000` | `stableDurationMs` |
+| `min_drink` | blob(float) | `20.0` | `minDrinkDeltaMl` |
+| `max_drink` | blob(float) | `500.0` | `maxDrinkDeltaMl` |
+| `ap_ssid` | string | `"WaterCupTracker-Setup"` | `apSsid` |
+| `ap_pass` | string | `"12345678"` | `apPassword` |
+| `admin_hash` | string | `""` | `adminPasswordHash` |
 
 ### 命名空間：`drink_ctr`
 
@@ -93,10 +102,10 @@ ESP32 Preferences 儲存於 NVS flash 分割區（0x9000，20 KB）。
 
 | NVS Key | 型別 | 說明 |
 |---------|------|------|
-| `period` | String | 目前計數的日期（`YYYY-MM-DD`） |
-| `total_ml` | Float | 當日累計飲水量（ml） |
-| `count` | UInt | 當日飲水次數 |
-| `last_ml` | Float | 上次飲水量（ml） |
+| `period` | string | 目前計數的日期（`YYYY-MM-DD`） |
+| `total_ml` | blob(float) | 當日累計飲水量（ml） |
+| `count` | u32 | 當日飲水次數 |
+| `last_ml` | blob(float) | 上次飲水量（ml） |
 
 **日期重置機制**：NTP 同步後，`DrinkDetector` 比對 `period` 欄位與目前日期。相同日期
 會還原計數；不同日期會先把舊數據留在 RAM，交由 `DailySummaryManager` 聚合，之後由
