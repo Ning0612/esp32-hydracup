@@ -12,7 +12,169 @@
 #include "http_server_support.h"
 
 namespace {
-const char* SETUP_HTML = R"HTML(<!doctype html><html lang="zh-TW"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>HydraCup 設定</title><style>body{font:16px sans-serif;max-width:40rem;margin:2rem auto;padding:1rem}label{display:block;margin-top:1rem}input,select,button{box-sizing:border-box;padding:.6rem;width:100%;margin-top:.3rem}button{cursor:pointer}#msg{margin:1rem 0}</style><h1>HydraCup 網路設定</h1><p>連線至此設定 AP 後，輸入裝置要使用的 WiFi。</p><div id="msg"></div><label>附近 WiFi<select id="nets"><option value="">請掃描</option></select></label><button id="scan">掃描</button><label>WiFi SSID<input id="ssid" autocomplete="off"></label><label>WiFi 密碼<input id="pass" type="password"></label><button id="save">儲存並重新啟動</button><script>let csrf='';const $=id=>document.getElementById(id);function msg(v){$('msg').textContent=v}fetch('/api/auth/csrf').then(r=>r.json()).then(v=>{csrf=v.csrf||''});$('scan').onclick=()=>{fetch('/api/wifi/scan').then(r=>r.json()).then(v=>{if(!v.ok)return msg('掃描失敗');$('nets').innerHTML='<option value="">選擇網路</option>'+(v.networks||[]).map(n=>'<option>'+n.ssid+'</option>').join('')})};$('nets').onchange=e=>{$('ssid').value=e.target.value};$('save').onclick=()=>{const h={'Content-Type':'application/json','X-CSRF-Token':csrf};fetch('/api/config',{method:'POST',headers:h,body:JSON.stringify({wifi_ssid:$('ssid').value.trim(),wifi_password:$('pass').value})}).then(r=>r.json()).then(v=>msg(v.ok?'已儲存，裝置重新啟動中…':(v.error||'儲存失敗')))};</script></html>)HTML";
+const char* SETUP_HTML = R"HTML(
+<!doctype html>
+<html lang="zh-TW">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>HydraCup 網路設定</title>
+<style>
+body{font:16px sans-serif;max-width:40rem;margin:2rem auto;padding:1rem}
+label{display:block;margin-top:1rem}
+input,select,button{box-sizing:border-box;padding:.6rem;width:100%;margin-top:.3rem}
+button{cursor:pointer}
+.message{margin:1rem 0;padding:.6rem;background:#eef6f5}
+.error{background:#fff0f0;color:#a00}
+.ok{background:#edf8ed;color:#175b17}
+[hidden]{display:none!important}
+</style>
+</head>
+<body>
+<h1>HydraCup 網路設定</h1>
+<p>連線至此設定 AP 後，輸入裝置要使用的 WiFi。</p>
+
+<section id="login-panel" hidden>
+  <h2>需要登入</h2>
+  <p>此裝置已設定管理密碼，請先登入才能掃描或修改 WiFi。</p>
+  <form id="login-form">
+    <label>管理密碼<input id="login-password" type="password" autocomplete="current-password" required></label>
+    <button id="login" type="submit">登入</button>
+  </form>
+  <div id="login-msg" class="message" role="alert"></div>
+</section>
+
+<section id="portal" hidden>
+  <div id="msg" class="message" role="status"></div>
+  <label>附近 WiFi
+    <select id="nets"><option value="">按「掃描」取得附近網路</option></select>
+  </label>
+  <button id="scan" type="button">掃描</button>
+  <label>WiFi SSID<input id="ssid" autocomplete="off"></label>
+  <label>WiFi 密碼<input id="pass" type="password" autocomplete="new-password"></label>
+  <button id="save" type="button">儲存並重新啟動</button>
+</section>
+
+<script>
+let csrf = '';
+let configured = false;
+let authenticated = false;
+const $ = id => document.getElementById(id);
+
+function setMessage(id, value, ok) {
+  const element = $(id);
+  element.textContent = value || '';
+  element.className = 'message ' + (ok ? 'ok' : 'error');
+  element.style.display = value ? 'block' : 'none';
+}
+
+function setView() {
+  const needsLogin = configured && !authenticated;
+  $('login-panel').hidden = !needsLogin;
+  $('portal').hidden = needsLogin;
+}
+
+function apiFetch(url, options) {
+  options = options || {};
+  const headers = new Headers(options.headers || {});
+  const method = (options.method || 'GET').toUpperCase();
+  if (method !== 'GET' && method !== 'HEAD' && csrf) headers.set('X-CSRF-Token', csrf);
+  options.headers = headers;
+  return fetch(url, options).then(response => {
+    if (response.status === 401) {
+      authenticated = false;
+      setView();
+    }
+    return response;
+  });
+}
+
+function scanWifi(showError) {
+  const button = $('scan');
+  const select = $('nets');
+  const current = $('ssid').value;
+  button.disabled = true;
+  button.textContent = '掃描中…';
+  setMessage('msg', '', false);
+  return apiFetch('/api/wifi/scan', {cache: 'no-store'})
+    .then(response => response.json().then(data => ({ok: response.ok && data.ok, data: data})))
+    .then(result => {
+      if (!result.ok) {
+        if (showError) setMessage('msg', '掃描失敗：' + (result.data.error || '無法取得附近網路。'), false);
+        return;
+      }
+      const networks = (result.data.networks || []).slice().sort((a, b) => b.rssi - a.rssi);
+      select.textContent = '';
+      const first = document.createElement('option');
+      first.value = '';
+      first.textContent = networks.length ? '附近網路（' + networks.length + ' 個）' : '找不到可見網路，請手動輸入';
+      select.appendChild(first);
+      networks.forEach(network => {
+        const option = document.createElement('option');
+        option.value = network.ssid;
+        option.textContent = network.ssid + (network.secure ? ' · 加密' : ' · 開放') + ' · ' + network.rssi + ' dBm';
+        select.appendChild(option);
+      });
+      if (current) select.value = current;
+    })
+    .catch(() => { if (showError) setMessage('msg', '掃描失敗：暫時無法取得附近網路。', false); })
+    .finally(() => { button.disabled = false; button.textContent = '掃描'; });
+}
+
+function refreshAuth() {
+  return fetch('/api/auth/csrf', {cache: 'no-store'})
+    .then(response => response.json().then(data => ({ok: response.ok, data: data})))
+    .then(result => {
+      if (!result.ok) throw new Error('auth');
+      csrf = result.data.csrf || '';
+      configured = !!result.data.configured;
+      authenticated = !!result.data.authenticated;
+      setView();
+      if (!configured || authenticated) return scanWifi(false);
+    });
+}
+
+$('nets').addEventListener('change', () => { if ($('nets').value) $('ssid').value = $('nets').value; });
+$('scan').addEventListener('click', () => scanWifi(true));
+
+$('login-form').addEventListener('submit', event => {
+  event.preventDefault();
+  const password = $('login-password').value;
+  if (!password || !csrf) { setMessage('login-msg', '請輸入管理密碼，並稍候安全驗證完成。', false); return; }
+  const button = $('login');
+  button.disabled = true;
+  button.textContent = '驗證中…';
+  fetch('/api/auth/login', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json', 'X-CSRF-Token': csrf},
+    body: JSON.stringify({password: password})
+  }).then(response => response.json().then(data => ({ok: response.ok && data.ok, data: data})))
+    .then(result => {
+      if (!result.ok) { setMessage('login-msg', result.data.error || '登入失敗。', false); return; }
+      $('login-password').value = '';
+      return refreshAuth();
+    })
+    .catch(() => setMessage('login-msg', '暫時無法連線，請稍後再試。', false))
+    .finally(() => { button.disabled = false; button.textContent = '登入'; });
+});
+
+$('save').addEventListener('click', () => {
+  const ssid = $('ssid').value.trim();
+  if (!ssid) { setMessage('msg', '請輸入或選擇 WiFi SSID。', false); return; }
+  apiFetch('/api/config', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({wifi_ssid: ssid, wifi_password: $('pass').value})
+  }).then(response => response.json().then(data => ({ok: response.ok && data.ok, data: data})))
+    .then(result => setMessage('msg', result.ok ? '已儲存，裝置重新啟動中…' : (result.data.error || '儲存失敗。'), result.ok))
+    .catch(() => setMessage('msg', '暫時無法連線，請稍後再試。', false));
+});
+
+refreshAuth().catch(() => setMessage('login-msg', '暫時無法連線，請重新整理頁面。', false));
+</script>
+</body>
+</html>
+)HTML";
 std::string jsonString(cJSON* object) { char* text = cJSON_PrintUnformatted(object); if (!text) return "{}"; std::string result(text); std::free(text); return result; }
 std::string stringValue(cJSON* object, const char* key) { cJSON* value = cJSON_GetObjectItemCaseSensitive(object, key); return value && cJSON_IsString(value) && value->valuestring ? value->valuestring : ""; }
 }

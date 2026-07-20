@@ -92,19 +92,33 @@ std::string WiFiManager::getAPIP() const { return _ipFrom(true); }
 int WiFiManager::scan(WifiNetwork* networks, int capacity) {
     if (!networks || capacity <= 0 || !_initialized) return -1;
     wifi_scan_config_t config = {};
+    config.scan_type = WIFI_SCAN_TYPE_ACTIVE;
+    config.scan_time.active.min = 100;
+    config.scan_time.active.max = 300;
     config.show_hidden = false;
     const esp_err_t result = esp_wifi_scan_start(&config, true);
-    if (result != ESP_OK) return -1;
+    if (result != ESP_OK) {
+        LOG_WARN(TAG, "scan start failed: %s", esp_err_to_name(result));
+        return -1;
+    }
     uint16_t count = 0;
-    esp_wifi_scan_get_ap_num(&count);
+    if (esp_wifi_scan_get_ap_num(&count) != ESP_OK) {
+        LOG_WARN(TAG, "scan result count failed");
+        return -1;
+    }
     wifi_ap_record_t records[32] = {};
     uint16_t fetch = std::min<uint16_t>(count, 32);
-    esp_wifi_scan_get_ap_records(&fetch, records);
+    if (fetch > 0 && esp_wifi_scan_get_ap_records(&fetch, records) != ESP_OK) {
+        LOG_WARN(TAG, "scan result read failed");
+        return -1;
+    }
     int used = 0;
     for (uint16_t i = 0; i < fetch; ++i) {
         if (records[i].ssid[0] == '\0') continue;
+        char ssid[sizeof(records[i].ssid)] = {};
+        std::memcpy(ssid, records[i].ssid, sizeof(ssid) - 1);
         int existing = -1;
-        for (int j = 0; j < used; ++j) if (std::strcmp(networks[j].ssid, reinterpret_cast<char*>(records[i].ssid)) == 0) existing = j;
+        for (int j = 0; j < used; ++j) if (std::strcmp(networks[j].ssid, ssid) == 0) existing = j;
         const bool secure = records[i].authmode != WIFI_AUTH_OPEN;
         if (existing >= 0) {
             if (records[i].rssi > networks[existing].rssi) {
@@ -112,7 +126,7 @@ int WiFiManager::scan(WifiNetwork* networks, int capacity) {
                 networks[existing].secure = secure;
             }
         } else if (used < capacity) {
-            std::strncpy(networks[used].ssid, reinterpret_cast<char*>(records[i].ssid), 32);
+            std::strncpy(networks[used].ssid, ssid, sizeof(networks[used].ssid) - 1);
             networks[used].ssid[32] = '\0';
             networks[used].rssi = records[i].rssi;
             networks[used].secure = secure;
