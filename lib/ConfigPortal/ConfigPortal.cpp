@@ -18,48 +18,87 @@ const char* SETUP_HTML = R"HTML(
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>HydraCup 網路設定</title>
+<title>HydraCup / 網路設定</title>
+<script>
+(function () {
+  var key = 'iot-ui-theme', stored = null;
+  try { stored = localStorage.getItem(key); } catch (e) {}
+  var theme = (stored === 'light' || stored === 'dark') ? stored :
+    (matchMedia('(prefers-color-scheme:dark)').matches ? 'dark' : 'light');
+  document.documentElement.dataset.theme = theme;
+})();
+</script>
 <style>
-body{font:16px sans-serif;max-width:40rem;margin:2rem auto;padding:1rem}
-label{display:block;margin-top:1rem}
-input,select,button{box-sizing:border-box;padding:.6rem;width:100%;margin-top:.3rem}
-button{cursor:pointer}
-.message{margin:1rem 0;padding:.6rem;background:#eef6f5}
-.error{background:#fff0f0;color:#a00}
-.ok{background:#edf8ed;color:#175b17}
-[hidden]{display:none!important}
+:root{color-scheme:light;--paper:#f1ede2;--surface:#fbf8ef;--surface-2:#e7e3d6;--ink:#17231f;--ink-soft:#263a34;--line:#b9b8aa;--muted:#68736c;--teal:#0b716a;--teal-dark:#07534f;--coral:#cf5a47;--coral-dark:#a94436;--amber:#bd812d;--shadow:rgba(23,35,31,.15);--inset:#fffdf7;--input-border:#7e9188;--grid-dot:rgba(23,35,31,.045);--danger-surface:#fff6ed;--mint:#a8d2c4;--on-dark:#fbf8ef;--on-light:#17231f;--dark-block-muted:#aab8ae;--nav-border:#71847a;--on-ring:rgba(168,210,196,.18)}
+:root[data-theme="dark"]{color-scheme:dark;--paper:#141b18;--surface:#1c2622;--surface-2:#24312c;--ink:#eef1ea;--ink-soft:#0a100d;--line:#3a4a43;--muted:#93a69c;--teal:#1fae9c;--teal-dark:#167d70;--coral:#e2705a;--coral-dark:#b8543f;--amber:#d99a3f;--shadow:rgba(0,0,0,.4);--inset:#101512;--input-border:#48584f;--grid-dot:rgba(255,255,255,.035);--danger-surface:#241a16}
+*{box-sizing:border-box}html{scroll-behavior:smooth}body{margin:0;min-height:100vh;overflow-x:hidden;background-color:var(--paper);background-image:linear-gradient(var(--grid-dot) 1px,transparent 1px),linear-gradient(90deg,var(--grid-dot) 1px,transparent 1px);background-size:20px 20px;color:var(--ink);font-family:Georgia,'Noto Serif TC',serif}button,input,select{font:700 .82rem Consolas,monospace}button,a,input,select{-webkit-tap-highlight-color:transparent}
+.topbar{padding:1rem;background:var(--ink-soft);border-bottom:5px solid var(--coral);color:var(--on-dark)}.topbar-in{max-width:1040px;margin:auto;display:flex;align-items:center;justify-content:space-between;gap:1rem}.brand{display:flex;align-items:center;gap:.7rem;color:inherit;text-decoration:none}.brand-mark{display:grid;place-items:center;width:2.25rem;height:2.25rem;border:2px solid var(--mint);color:var(--mint);font:700 1rem Consolas,monospace}.brand-copy{color:inherit;font:700 .82rem Consolas,monospace;letter-spacing:.08em}.brand-sub{display:block;margin-top:.22rem;color:var(--dark-block-muted);font:400 .68rem Consolas,monospace;letter-spacing:.02em}.topbar-actions{display:flex;align-items:center;justify-content:flex-end;gap:.6rem;flex-wrap:wrap}.theme-toggle{display:flex;overflow:hidden;border:1px solid var(--nav-border)}.theme-toggle button{min-width:0;padding:.46rem .6rem;border:0;background:transparent;color:var(--on-dark);font-size:.68rem;letter-spacing:.04em}.theme-toggle button+button{border-left:1px solid var(--nav-border)}.theme-toggle button.active{background:var(--mint);color:var(--on-light)}.theme-toggle button:hover:not(.active){background:var(--on-ring)}button:focus-visible{outline:2px solid var(--mint);outline-offset:2px}
+.wrap{max-width:1040px;margin:auto;padding:1.4rem 1rem 3rem}.intro{display:flex;align-items:flex-end;justify-content:space-between;gap:1.5rem;margin:.4rem 0 1.25rem}.kicker,.label{color:var(--teal);font:700 .72rem Consolas,monospace;letter-spacing:.14em;text-transform:uppercase}.intro h1{margin:.45rem 0 0;font-size:clamp(2rem,6vw,4rem);line-height:.92;letter-spacing:-.06em}.intro p{max-width:30rem;margin:0;color:var(--muted);line-height:1.55}.card{position:relative;margin-bottom:1rem;padding:1.05rem;background:var(--surface);border:1px solid var(--ink);box-shadow:5px 5px 0 var(--line)}.card::before{content:'';position:absolute;top:0;left:0;width:42px;height:4px;background:var(--teal)}.card h2{display:flex;align-items:baseline;gap:.55rem;margin:0 0 1rem;padding-bottom:.65rem;border-bottom:1px solid var(--line);font-size:1.05rem}.card h2 span{color:var(--coral);font:700 .7rem Consolas,monospace}.section-note{margin:-.45rem 0 .9rem;color:var(--muted);font-size:.82rem;line-height:1.45}.info{margin:.85rem 0 0;padding:.65rem .75rem;border-left:3px solid var(--teal);background:var(--surface-2);color:var(--muted);font-size:.82rem;line-height:1.5}.hint{margin:.35rem 0 0;color:var(--muted);font:400 .76rem Consolas,monospace}.status-banner{display:flex;align-items:center;justify-content:space-between;gap:1rem;margin-bottom:1rem;padding:1rem 1.1rem;background:var(--ink-soft);color:var(--on-dark);box-shadow:5px 5px 0 var(--line)}.status-label{color:var(--mint);font:700 .7rem Consolas,monospace;letter-spacing:.12em}.status-value{margin-top:.25rem;font-size:1.5rem}.updated{color:var(--dark-block-muted);font:400 .7rem Consolas,monospace;text-align:right}.updated strong{color:var(--on-dark)}
+form{display:grid;grid-template-columns:1fr;gap:1rem}.login-card{max-width:30rem;margin:2rem auto 1rem}.field{margin-bottom:.85rem}.field:last-child{margin-bottom:0}.field label{display:block;margin-bottom:.3rem;color:var(--muted);font:700 .72rem Consolas,monospace;letter-spacing:.03em}input,select{width:100%;padding:.64rem .68rem;border:1px solid var(--input-border);border-radius:0;background:var(--inset);color:var(--ink)}input:focus,select:focus{outline:2px solid var(--mint);outline-offset:1px;border-color:var(--teal)}input::placeholder{color:var(--muted);font-weight:400}option{background:var(--inset);color:var(--ink)}.field-with-action{display:flex;align-items:stretch;gap:.5rem}.field-with-action select{flex:1;min-width:0}.field-with-action button{flex:none;white-space:nowrap}button,.btn{min-width:150px;padding:.7rem .85rem;border:1px solid var(--teal-dark);border-radius:0;cursor:pointer;background:var(--teal);color:var(--on-dark)}button:hover,.btn:hover{background:var(--teal-dark)}button:disabled{opacity:.55;cursor:wait}.btn-primary{background:var(--teal);color:var(--on-dark)}button.ghost{background:transparent;border-color:var(--teal);color:var(--teal)}button.ghost:hover{background:var(--teal);color:var(--on-dark)}.actions{display:flex;flex-wrap:wrap;gap:.6rem}.actions button{flex:1;min-width:170px}.message{display:none;margin:0 0 1rem;padding:.8rem 1rem;border:1px solid var(--teal);border-left:5px solid var(--teal);background:var(--surface);color:var(--teal-dark);font:700 .8rem Consolas,monospace}.message.error{display:block;border-color:var(--coral);color:var(--coral)}.message.ok{display:block}.warn-banner{margin-bottom:1rem;padding:.75rem .9rem;background:var(--surface-2);border:1px solid var(--amber);border-left:3px solid var(--amber);color:var(--ink);font:700 .78rem Consolas,monospace}[hidden]{display:none!important}
+.site-footer{margin-top:2rem;padding:1.2rem 1rem;background:var(--ink-soft);color:var(--dark-block-muted)}.footer-in{max-width:1040px;margin:auto;display:flex;align-items:center;justify-content:space-between;gap:1rem;flex-wrap:wrap}.footer-meta{color:var(--dark-block-muted);font:400 .7rem Consolas,monospace}.footer-repo{display:flex;align-items:baseline;gap:.5rem;font:700 .74rem Consolas,monospace}.footer-repo .label{color:var(--mint);text-transform:uppercase;letter-spacing:.12em}
+@media(max-width:720px){.topbar-in,.intro{align-items:flex-start;flex-direction:column}.topbar-actions{justify-content:flex-start;width:100%}.status-banner{align-items:flex-start;flex-direction:column}.updated{text-align:left}.wrap{padding-top:1rem}}@media(max-width:480px){.field-with-action{flex-direction:column}.field-with-action button{width:100%}.actions button{width:100%}.footer-in{flex-direction:column;align-items:flex-start}}
 </style>
 </head>
 <body>
-<h1>HydraCup 網路設定</h1>
-<p>連線至此設定 AP 後，輸入裝置要使用的 WiFi。</p>
+<header class="topbar"><div class="topbar-in">
+  <div class="brand"><span class="brand-mark">HC</span><span class="brand-copy">HYDRACUP<span class="brand-sub">LOCAL DEVICE / WATER TRACKER</span></span></div>
+  <div class="topbar-actions">
+    <div class="theme-toggle" role="group" aria-label="色彩主題"><button type="button" data-theme-choice="light" aria-pressed="false">LIGHT</button><button type="button" data-theme-choice="dark" aria-pressed="false">DARK</button></div>
+  </div>
+</div></header>
 
-<section id="login-panel" hidden>
-  <h2>需要登入</h2>
-  <p>此裝置已設定管理密碼，請先登入才能掃描或修改 WiFi。</p>
-  <form id="login-form">
-    <label>管理密碼<input id="login-password" type="password" autocomplete="current-password" required></label>
-    <button id="login" type="submit">登入</button>
-  </form>
-  <div id="login-msg" class="message" role="alert"></div>
-</section>
+<main class="wrap">
+  <div class="intro"><div><div class="kicker">00 / provisioning</div><h1>網路設定</h1></div><p>HydraCup 目前以設定 AP 提供本頁。首次設定可直接輸入 WiFi；已設定管理密碼的裝置需要先登入。</p></div>
 
-<section id="portal" hidden>
-  <div id="msg" class="message" role="status"></div>
-  <label>附近 WiFi
-    <select id="nets"><option value="">按「掃描」取得附近網路</option></select>
-  </label>
-  <button id="scan" type="button">掃描</button>
-  <label>WiFi SSID<input id="ssid" autocomplete="off"></label>
-  <label>WiFi 密碼<input id="pass" type="password" autocomplete="new-password"></label>
-  <button id="save" type="button">儲存並重新啟動</button>
-</section>
+  <section class="card login-card" id="login-panel" hidden>
+    <div class="kicker">01 / access</div>
+    <h2>登入 recovery AP</h2>
+    <p class="section-note">此裝置已設定管理密碼，請先登入才能掃描或修改 WiFi。</p>
+    <div id="login-msg" class="message" role="alert" aria-live="polite"></div>
+    <form id="login-form" class="login-form">
+      <div class="field"><label for="login-password">管理密碼</label><input id="login-password" type="password" autocomplete="current-password" required></div>
+      <button id="login" type="submit">登入</button>
+    </form>
+  </section>
+
+  <section id="portal" hidden>
+    <div id="ap-status" class="status-banner"><div><div class="status-label">AP MODE / SETUP PORTAL</div><div class="status-value">設定 WiFi</div></div><div class="updated">ADDRESS<br><strong id="ap-ip">192.168.4.1</strong></div></div>
+    <div id="msg" class="message" role="status" aria-live="polite"></div>
+    <section class="card"><h2><span>01</span>選擇 WiFi</h2><p class="info">掃描清單只顯示附近可見網路；也可以直接輸入隱藏 SSID。</p>
+      <div class="field"><label for="nets">附近 WiFi 網路</label><div class="field-with-action"><select id="nets"><option value="">尚未掃描</option></select><button class="ghost" id="scan" type="button">掃描</button></div><p class="hint" id="scan-hint" aria-live="polite">掃描結果會保留目前選取的 SSID。</p></div>
+      <div class="field"><label for="ssid">WiFi SSID（可手動輸入）</label><input id="ssid" type="text" autocomplete="off" placeholder="請輸入或選擇 WiFi SSID"></div>
+    </section>
+    <section class="card"><h2><span>02</span>儲存設定</h2>
+      <div class="field"><label for="pass">WiFi 密碼</label><input id="pass" type="password" autocomplete="current-password" placeholder="WiFi 密碼"></div>
+      <div class="actions"><button class="btn btn-primary" id="save" type="button">儲存並重新啟動</button></div>
+      <p class="info">儲存後裝置會重新啟動並嘗試連線；成功後請改用 OLED 顯示的 IP 開啟 WebUI。</p>
+    </section>
+  </section>
+</main>
+
+<footer class="site-footer"><div class="footer-in"><div class="footer-repo"><span class="label">LOCAL AP</span><span>HydraCup provisioning portal</span></div><div class="footer-meta">ESP32 local device · HTTP setup</div></div></footer>
 
 <script>
 let csrf = '';
 let configured = false;
 let authenticated = false;
 const $ = id => document.getElementById(id);
+
+function syncThemeButtons() {
+  const current = document.documentElement.dataset.theme;
+  document.querySelectorAll('[data-theme-choice]').forEach(button => {
+    const active = button.getAttribute('data-theme-choice') === current;
+    button.classList.toggle('active', active);
+    button.setAttribute('aria-pressed', active ? 'true' : 'false');
+  });
+}
+
+function setTheme(theme) {
+  if (theme !== 'light' && theme !== 'dark') return;
+  document.documentElement.dataset.theme = theme;
+  try { localStorage.setItem('iot-ui-theme', theme); } catch (e) {}
+  syncThemeButtons();
+}
 
 function setMessage(id, value, ok) {
   const element = $(id);
@@ -89,17 +128,25 @@ function apiFetch(url, options) {
   });
 }
 
+function loadStatus() {
+  return apiFetch('/api/status', {cache: 'no-store'}).then(response => response.ok ? response.json() : null)
+    .then(data => { if (data && data.ap_ip) $('ap-ip').textContent = data.ap_ip; })
+    .catch(() => {});
+}
+
 function scanWifi(showError) {
   const button = $('scan');
   const select = $('nets');
   const current = $('ssid').value;
   button.disabled = true;
   button.textContent = '掃描中…';
+  $('scan-hint').textContent = '正在搜尋附近網路…';
   setMessage('msg', '', false);
   return apiFetch('/api/wifi/scan', {cache: 'no-store'})
     .then(response => response.json().then(data => ({ok: response.ok && data.ok, data: data})))
     .then(result => {
       if (!result.ok) {
+        $('scan-hint').textContent = '掃描未完成，請稍後重試或手動輸入。';
         if (showError) setMessage('msg', '掃描失敗：' + (result.data.error || '無法取得附近網路。'), false);
         return;
       }
@@ -115,9 +162,10 @@ function scanWifi(showError) {
         option.textContent = network.ssid + (network.secure ? ' · 加密' : ' · 開放') + ' · ' + network.rssi + ' dBm';
         select.appendChild(option);
       });
+      $('scan-hint').textContent = networks.length ? '已依訊號強度排序；也可以手動輸入隱藏 SSID。' : '沒有找到可見網路，請手動輸入 SSID。';
       if (current) select.value = current;
     })
-    .catch(() => { if (showError) setMessage('msg', '掃描失敗：暫時無法取得附近網路。', false); })
+    .catch(() => { $('scan-hint').textContent = '掃描未完成，請稍後重試或手動輸入。'; if (showError) setMessage('msg', '掃描失敗：暫時無法取得附近網路。', false); })
     .finally(() => { button.disabled = false; button.textContent = '掃描'; });
 }
 
@@ -130,10 +178,13 @@ function refreshAuth() {
       configured = !!result.data.configured;
       authenticated = !!result.data.authenticated;
       setView();
-      if (!configured || authenticated) return scanWifi(false);
+      if (!configured || authenticated) { loadStatus(); return scanWifi(false); }
+      $('login-password').focus();
     });
 }
 
+document.querySelectorAll('[data-theme-choice]').forEach(button => button.addEventListener('click', () => setTheme(button.getAttribute('data-theme-choice'))));
+syncThemeButtons();
 $('nets').addEventListener('change', () => { if ($('nets').value) $('ssid').value = $('nets').value; });
 $('scan').addEventListener('click', () => scanWifi(true));
 
@@ -170,7 +221,7 @@ $('save').addEventListener('click', () => {
     .catch(() => setMessage('msg', '暫時無法連線，請稍後再試。', false));
 });
 
-refreshAuth().catch(() => setMessage('login-msg', '暫時無法連線，請重新整理頁面。', false));
+refreshAuth().catch(() => { configured = false; authenticated = false; setView(); setMessage('msg', '安全狀態暫時無法取得，請重新整理頁面。', false); });
 </script>
 </body>
 </html>
