@@ -34,5 +34,6 @@ ESP32 智慧水杯追蹤器完整文件索引。
 
 ## 版本紀錄
 
+- [releases/v0.4.0.md](releases/v0.4.0.md) — 原生 FreeRTOS/ESP-IDF 遷移與首次使用流程更新
 - [releases/v0.3.0.md](releases/v0.3.0.md) — WebUI 風格重設計與展示素材更新
 - [releases/v0.2.0.md](releases/v0.2.0.md) — FreeRTOS runtime 與背景 worker 更新

@@ -3,7 +3,7 @@
 [![PlatformIO](https://img.shields.io/badge/PlatformIO-espressif32%406.10-orange?logo=platformio)](https://platformio.org)
 [![ESP32](https://img.shields.io/badge/Board-ESP32-red?logo=espressif)](https://www.espressif.com/en/products/socs/esp32)
 [![ESP-IDF](https://img.shields.io/badge/Framework-ESP--IDF-blue?logo=espressif)](https://docs.espressif.com/projects/esp-idf/en/latest/esp32/)
-[![Version](https://img.shields.io/badge/Version-0.3.0-brightgreen)](include/version.h)
+[![Version](https://img.shields.io/badge/Version-0.4.0-brightgreen)](include/version.h)
 [![CI](https://github.com/Ning0612/esp32-hydracup/actions/workflows/ci.yml/badge.svg)](https://github.com/Ning0612/esp32-hydracup/actions/workflows/ci.yml)
 [![License](https://img.shields.io/badge/License-MIT-yellow)](LICENSE)
 
