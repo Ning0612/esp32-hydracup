@@ -3,6 +3,8 @@
 #include <cstdint>
 #include <string>
 
+#include "driver/i2c_types.h"
+
 class DisplayManager {
 public:
     bool init();
@@ -31,7 +33,10 @@ private:
     bool _screenOn = false;
     uint32_t _wakeMs = 0;
     uint8_t _buffer[128 * 32 / 8] = {};
+    i2c_master_bus_handle_t _i2cBus = nullptr;
+    i2c_master_dev_handle_t _i2cDevice = nullptr;
 
+    void _deinitI2c();
     bool _command(uint8_t command);
     bool _data(const uint8_t* bytes, size_t length);
     void _clear();

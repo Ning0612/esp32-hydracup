@@ -296,8 +296,8 @@ API 完整文件見 [api.md](api.md)。
 | 1 | 今日飲水進度（ml）、飲水次數、上次飲水量、下次提醒倒數 |
 
 頁面每 4 秒（`PAGE_INTERVAL_MS`）切換一次；60 秒（`SCREEN_ON_DURATION_MS`）無操作後螢幕自動關閉。
-文字由內建 5×7 glyph table 繪製至 128×32 framebuffer；目前 I2C 使用 ESP-IDF legacy
-driver，啟動時可能看到 legacy driver warning，後續可切換至 `driver/i2c_master.h`。
+文字由內建 5×7 glyph table 繪製至 128×32 framebuffer；I2C 使用 ESP-IDF
+`driver/i2c_master.h` master bus/device API，保留 400 kHz 與內部 pull-up 設定。
 
 ---
 

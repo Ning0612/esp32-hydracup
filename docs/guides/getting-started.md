@@ -61,10 +61,12 @@ pio run -e esp32dev -v -t uploadfs | Select-String address
 
 1. ESP32 上電後，若沒有可用 WiFi 設定或 STA 連線逾時，蜂鳴器播放 `AP_MODE` 音效
 2. 在手機或電腦的 WiFi 列表中找到 `WaterCupTracker-Setup`
-3. 輸入密碼 `12345678` 連線
+3. 輸入 AP 密碼 `12345678` 連線；這是設定 AP 的 WiFi 密碼，不是 admin 密碼
 4. 開啟瀏覽器前往 `http://192.168.4.1`
-5. 輸入您的 WiFi SSID 與密碼，點擊「Save & Reboot」
+5. 在設定頁掃描或輸入目標 WiFi 的 SSID 與密碼，點擊「儲存並重新啟動」
 6. 裝置自動重啟並嘗試連線 WiFi
+7. 由 OLED 或路由器查到裝置在區域網路的 IP，開啟 `http://<裝置 IP>/login`
+8. 初次使用沒有預設 admin 密碼；在 `/login` 輸入一組至少 8 個字元的管理密碼並確認，完成後即可登入 WebUI
 
 ---
 

@@ -6,14 +6,15 @@
 #include <cstring>
 
 #include "config.h"
-#include "driver/i2c.h"
+#include "driver/i2c_master.h"
 #include "hal_time.h"
 #include "pins.h"
 
 namespace {
-constexpr i2c_port_t PORT = I2C_NUM_0;
+constexpr i2c_port_num_t PORT = I2C_NUM_0;
 constexpr uint8_t CONTROL_COMMAND = 0x00;
 constexpr uint8_t CONTROL_DATA = 0x40;
+constexpr int I2C_TIMEOUT_MS = 100;
 
 // Compact 5x7 glyphs for the ASCII characters used on the device screen.
 // The lowercase g uses the optional eighth row for its descender.
@@ -75,20 +76,45 @@ const uint8_t* glyph(char input) {
 }
 }
 
+void DisplayManager::_deinitI2c() {
+    if (_i2cDevice) {
+        i2c_master_bus_rm_device(_i2cDevice);
+        _i2cDevice = nullptr;
+    }
+    if (_i2cBus) {
+        i2c_del_master_bus(_i2cBus);
+        _i2cBus = nullptr;
+    }
+}
+
 bool DisplayManager::init() {
-    i2c_config_t cfg = {};
-    cfg.mode = I2C_MODE_MASTER;
-    cfg.sda_io_num = static_cast<gpio_num_t>(PIN_OLED_SDA);
-    cfg.scl_io_num = static_cast<gpio_num_t>(PIN_OLED_SCL);
-    cfg.sda_pullup_en = GPIO_PULLUP_ENABLE;
-    cfg.scl_pullup_en = GPIO_PULLUP_ENABLE;
-    cfg.master.clk_speed = 400000;
-    if (i2c_param_config(PORT, &cfg) != ESP_OK) return false;
-    const esp_err_t installed = i2c_driver_install(PORT, cfg.mode, 0, 0, 0);
-    if (installed != ESP_OK && installed != ESP_ERR_INVALID_STATE) return false;
+    if (_available) return true;
+    i2c_master_bus_config_t busConfig = {};
+    busConfig.i2c_port = PORT;
+    busConfig.sda_io_num = static_cast<gpio_num_t>(PIN_OLED_SDA);
+    busConfig.scl_io_num = static_cast<gpio_num_t>(PIN_OLED_SCL);
+    busConfig.clk_source = I2C_CLK_SRC_DEFAULT;
+    busConfig.glitch_ignore_cnt = 7;
+    busConfig.flags.enable_internal_pullup = 1;
+    if (i2c_new_master_bus(&busConfig, &_i2cBus) != ESP_OK) return false;
+
+    i2c_device_config_t deviceConfig = {};
+    deviceConfig.dev_addr_length = I2C_ADDR_BIT_LEN_7;
+    deviceConfig.device_address = OLED_I2C_ADDRESS;
+    deviceConfig.scl_speed_hz = 400000;
+    if (i2c_master_bus_add_device(_i2cBus, &deviceConfig, &_i2cDevice) != ESP_OK) {
+        _deinitI2c();
+        return false;
+    }
+
     static const uint8_t setup[] = {0xae,0xd5,0x80,0xa8,0x1f,0xd3,0x00,0x40,0x8d,0x14,
         0x20,0x00,0xa1,0xc8,0xda,0x02,0x81,0x8f,0xd9,0xf1,0xdb,0x40,0xa4,0xa6,0xaf};
-    for (uint8_t command : setup) if (!_command(command)) return false;
+    for (uint8_t command : setup) {
+        if (!_command(command)) {
+            _deinitI2c();
+            return false;
+        }
+    }
     _available = true;
     _clear();
     _flush();
@@ -96,19 +122,20 @@ bool DisplayManager::init() {
 }
 
 bool DisplayManager::_command(uint8_t command) {
+    if (!_i2cDevice) return false;
     const uint8_t packet[2] = {CONTROL_COMMAND, command};
-    return i2c_master_write_to_device(PORT, OLED_I2C_ADDRESS, packet, sizeof(packet),
-                                      pdMS_TO_TICKS(100)) == ESP_OK;
+    return i2c_master_transmit(_i2cDevice, packet, sizeof(packet), I2C_TIMEOUT_MS) == ESP_OK;
 }
 
 bool DisplayManager::_data(const uint8_t* bytes, size_t length) {
+    if (!_i2cDevice) return false;
     uint8_t packet[33];
     while (length > 0) {
         const size_t chunk = std::min<size_t>(length, 32);
         packet[0] = CONTROL_DATA;
         std::memcpy(packet + 1, bytes, chunk);
-        if (i2c_master_write_to_device(PORT, OLED_I2C_ADDRESS, packet, chunk + 1,
-                                       pdMS_TO_TICKS(100)) != ESP_OK) return false;
+        if (i2c_master_transmit(_i2cDevice, packet, chunk + 1, I2C_TIMEOUT_MS) != ESP_OK)
+            return false;
         bytes += chunk; length -= chunk;
     }
     return true;
