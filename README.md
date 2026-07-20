@@ -129,9 +129,11 @@ pio run -e esp32dev --target uploadfs
 
 # 4. If WiFi is not configured or the STA connection times out, the device
 #    broadcasts "WaterCupTracker-Setup" AP. Connect and open http://192.168.4.1
-#    Enter your WiFi credentials and save
+#    The default AP password is 12345678. Enter your WiFi credentials and save.
+#    This is not the admin password; no admin password has a default value.
 
-# 5. After reboot, find the device IP and open http://<ip>
+# 5. After reboot, find the device IP and open http://<ip>/login
+#    Set an admin password (at least 8 characters) on first use, then sign in.
 ```
 
 See [docs/guides/getting-started.md](docs/guides/getting-started.md) for the complete first-time setup walkthrough.
