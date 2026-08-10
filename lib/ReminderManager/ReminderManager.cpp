@@ -4,24 +4,24 @@
 #include "hal_time.h"
 
 void ReminderManager::init(uint32_t intervalMin, bool enabled) {
-    setIntervalMin(intervalMin);
+    const uint64_t milliseconds = static_cast<uint64_t>(intervalMin) * 60000ULL;
+    _intervalMs = static_cast<uint32_t>(std::min<uint64_t>(milliseconds, 0xFFFFFFFFULL));
     _enabled = enabled;
-    _lastEventMs = hal_millis();
+    _core.init(_intervalMs, enabled, hal_millis());
 }
 
 void ReminderManager::setEnabled(bool en) {
     _enabled = en;
-    if (!en) {
-        _alerting = false;
-        _beepCycleEndMs = 0;
-        _overdueWhileAway = false;
-        if (_buzzer) _buzzer->stop();
-    }
+    _core.setEnabled(en, hal_millis());
+    _soundActive = false;
+    _beepCycleEndMs = 0;
+    if (_buzzer) _buzzer->stop();
 }
 
 void ReminderManager::setIntervalMin(uint32_t min) {
     const uint64_t milliseconds = static_cast<uint64_t>(min) * 60000ULL;
     _intervalMs = static_cast<uint32_t>(std::min<uint64_t>(milliseconds, 0xFFFFFFFFULL));
+    _core.setIntervalMs(_intervalMs, hal_millis(), _cupIsStable());
 }
 
 void ReminderManager::setAlertTimeoutSec(uint32_t sec) {
@@ -30,17 +30,24 @@ void ReminderManager::setAlertTimeoutSec(uint32_t sec) {
 }
 
 void ReminderManager::update() {
-    if (!_enabled || _intervalMs == 0) return;
     const uint32_t now = hal_millis();
-    if (_alerting) {
-        const bool cupLifted = _appState && _appState->cupState == CupState::NO_CUP;
+    const bool cupStable = _cupIsStable();
+    _core.update(now, cupStable);
+    if (_core.consumeAlertStarted()) {
+        _soundActive = true;
+        _alertStartMs = now;
+        _beepCycleEndMs = 0;
+        LOG_INFO("Reminder", "time to drink water");
+        if (_buzzer) _buzzer->play(BeepPattern::REMINDER);
+    }
+
+    if (_soundActive) {
         const bool timedOut = now - _alertStartMs >= _alertTimeoutMs;
-        if (cupLifted || timedOut) {
-            _alerting = false;
+        if (!cupStable || timedOut) {
+            _soundActive = false;
             _beepCycleEndMs = 0;
-            _lastEventMs = now;
             if (_buzzer) _buzzer->stop();
-            LOG_INFO("Reminder", "alert stopped (%s)", cupLifted ? "cup lifted" : "timeout");
+            LOG_INFO("Reminder", "sound stopped (%s)", !cupStable ? "cup away" : "timeout");
             return;
         }
         if (_buzzer && !_buzzer->isPlaying()) {
@@ -50,36 +57,30 @@ void ReminderManager::update() {
                 _buzzer->play(BeepPattern::REMINDER);
             }
         }
-        return;
-    }
-    if (_overdueWhileAway) {
-        if (_cupIsStable()) {
-            _overdueWhileAway = false;
-            _alerting = true;
-            _alertStartMs = now;
-            LOG_INFO("Reminder", "time to drink water (overdue)");
-            if (_buzzer) _buzzer->play(BeepPattern::REMINDER);
-        }
-        return;
-    }
-    if (now - _lastEventMs >= _intervalMs) {
-        if (!_cupIsStable()) {
-            _overdueWhileAway = true;
-            return;
-        }
-        _alerting = true;
-        _alertStartMs = now;
-        LOG_INFO("Reminder", "time to drink water");
-        if (_buzzer) _buzzer->play(BeepPattern::REMINDER);
     }
 }
 
-void ReminderManager::resetTimer() {
-    if (_alerting && _buzzer) _buzzer->stop();
-    _lastEventMs = hal_millis();
-    _alerting = false;
+void ReminderManager::onDrinkConfirmed() {
+    if (_buzzer) _buzzer->stop();
+    _core.onDrinkConfirmed(hal_millis(), _cupIsStable());
+    _soundActive = false;
     _beepCycleEndMs = 0;
-    _overdueWhileAway = false;
+}
+
+void ReminderManager::snooze(uint32_t minutes) {
+    const uint64_t milliseconds = static_cast<uint64_t>(minutes) * 60000ULL;
+    _core.snooze(static_cast<uint32_t>(std::min<uint64_t>(milliseconds, 0xFFFFFFFFULL)),
+                 hal_millis(), _cupIsStable());
+    _soundActive = false;
+    _beepCycleEndMs = 0;
+    if (_buzzer) _buzzer->stop();
+}
+
+void ReminderManager::setPausedToday(bool paused) {
+    _core.setPausedToday(paused, hal_millis(), _cupIsStable());
+    _soundActive = false;
+    _beepCycleEndMs = 0;
+    if (_buzzer) _buzzer->stop();
 }
 
 void ReminderManager::setBuzzer(BuzzerController* buz) { _buzzer = buz; }
@@ -93,8 +94,6 @@ bool ReminderManager::_cupIsStable() const {
 }
 
 uint32_t ReminderManager::getNextReminderSec() const {
-    if (!_enabled || _intervalMs == 0 || _alerting || _overdueWhileAway) return 0;
-    const uint32_t elapsed = hal_millis() - _lastEventMs;
-    if (elapsed >= _intervalMs) return 0;
-    return (_intervalMs - elapsed) / 1000;
+    const uint32_t remaining = _core.remainingMs(hal_millis());
+    return remaining == 0 ? 0 : (remaining + 999) / 1000;
 }

@@ -10,7 +10,7 @@ struct AppState {
     bool     oledOk        = false;
     bool     hx711Ok       = false;
     bool     buzzerOk      = false;
-    bool     wifiConnected = false;
+    std::atomic<bool> wifiConnected{false};
     bool     ntpSynced     = false;
 
     float    weightGrams   = 0.0f;
@@ -20,6 +20,7 @@ struct AppState {
     float    lastDrinkMl     = 0.0f;
     uint32_t drinkCountToday = 0;
     uint32_t nextReminderSec = 0;
+    char     lastDrinkAt[32] = {};
 
     bool               webhookConfigured = false;
     std::atomic<bool>  webhookLastOk{false};

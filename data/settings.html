@@ -33,7 +33,7 @@
       <div class="field"><label for="dg">每日目標（ml）</label><input type="number" id="dg" min="100" max="9999"></div>
       <div class="check"><input type="checkbox" id="re"><label for="re">啟用飲水提醒</label></div>
       <div class="field"><label for="ri">提醒間隔（分鐘）</label><input type="number" id="ri" min="1" max="1440"></div>
-      <div class="field"><label for="rat">警報持續時間（秒）</label><input type="number" id="rat" min="5" max="3600"><p class="hint">拿起杯子後會提前停止。</p></div>
+      <div class="field"><label for="rat">警報聲音持續時間（秒）</label><input type="number" id="rat" min="5" max="3600"><p class="hint">拿起杯子或逾時只會停止聲音；有效喝水事件才會重新計時。</p></div>
     </section>
     <section class="card"><h2><span>02</span>蜂鳴器</h2>
       <div class="check"><input type="checkbox" id="be"><label for="be">啟用蜂鳴器</label></div>
@@ -109,7 +109,14 @@
       <option value="50400">UTC+14</option>
     </select></div>
     </section>
-    <section class="card"><h2><span>06</span>MQTT</h2>
+    <section class="card"><h2><span>06</span>Cloud sync</h2>
+      <p class="section-note">連線到獨立的 HydraCup Service。裝置 token 只保存在 NVS，不會顯示於此頁。</p>
+      <div class="check"><input type="checkbox" id="ce"><label for="ce">啟用 HTTPS 同步</label></div>
+      <div class="field"><label for="cu">Service URL</label><input type="url" id="cu" placeholder="https://hydracup-service.pages.dev"></div>
+      <div class="field"><label for="cd">Device ID</label><input type="text" id="cd" readonly></div>
+      <div class="field"><label for="cth">Device token SHA-256</label><input type="text" id="cth" readonly></div>
+    </section>
+    <section class="card"><h2><span>07</span>MQTT（選用 telemetry）</h2>
       <p class="section-note">選填；變更後需重新啟動。</p>
       <div class="check"><input type="checkbox" id="me"><label for="me">啟用 MQTT 發佈</label></div>
       <div class="field"><label for="mh">Broker 位址</label><input type="text" id="mh" placeholder="192.168.1.50 或 epaper-display.local"></div>
@@ -123,7 +130,7 @@
   </form>
 
   <hr class="divider">
-  <section id="calibration" class="card"><h2><span>07</span>秤重校正</h2>
+  <section id="calibration" class="card"><h2><span>08</span>秤重校正</h2>
     <p class="section-note">先移除所有重物歸零，再放上已知重量完成校正。</p>
     <div class="split-grid"><div><div class="label">目前校正因子</div><div class="factor-badge" id="cur-factor">--</div></div><div><div class="label">即時重量</div><div class="weight-display-lg" id="cal-weight">-- g</div></div></div>
     <div class="section-title">步驟 1 / 歸零</div><div class="actions"><button class="btn btn-secondary" type="button" onclick="doTare()">執行歸零</button></div><div class="msg" id="tare-msg"></div>
@@ -173,6 +180,10 @@ function load() {
     document.getElementById('sdm').value  = d.stableDurationMs || 3000;
     document.getElementById('mnd').value  = d.minDrinkDeltaMl != null ? d.minDrinkDeltaMl : 20;
     document.getElementById('mxd').value  = d.maxDrinkDeltaMl != null ? d.maxDrinkDeltaMl : 500;
+    document.getElementById('ce').checked = !!d.cloudEnabled;
+    document.getElementById('cu').value   = d.cloudBaseUrl || '';
+    document.getElementById('cd').value   = d.cloudDeviceId || '';
+    document.getElementById('cth').value  = d.cloudDeviceTokenHash || '';
     document.getElementById('me').checked = !!d.mqttEnabled;
     document.getElementById('mh').value   = d.mqttBrokerHost || '';
     document.getElementById('mp').value   = d.mqttBrokerPort || 1883;
@@ -265,6 +276,8 @@ function save() {
     stableDurationMs:        parseInt(document.getElementById('sdm').value)   || 3000,
     minDrinkDeltaMl:         parseFloat(document.getElementById('mnd').value) || 20,
     maxDrinkDeltaMl:         parseFloat(document.getElementById('mxd').value) || 500,
+    cloudEnabled:            document.getElementById('ce').checked,
+    cloudBaseUrl:            document.getElementById('cu').value.replace(/\/+$/, ''),
     mqttEnabled:             document.getElementById('me').checked,
     mqttBrokerHost:          document.getElementById('mh').value,
     mqttBrokerPort:          parseInt(document.getElementById('mp').value)  || 1883,

@@ -24,6 +24,12 @@ struct AppConfig {
 
     std::string discordWebhookUrl;
 
+    bool        cloudEnabled = false;
+    std::string cloudBaseUrl;
+    std::string cloudDeviceId;
+    std::string cloudDeviceToken;
+    std::string reminderPausedUntilDate;
+
     bool     reminderEnabled          = true;
     uint32_t reminderIntervalMin      = 60;
     uint32_t reminderAlertTimeoutSec  = 60;

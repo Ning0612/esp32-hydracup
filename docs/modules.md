@@ -218,7 +218,7 @@ API 完整文件見 [api.md](api.md)。
 
 ## ReminderManager
 
-**職責**：根據 `reminderIntervalMin` 在無飲水事件超時後觸發蜂鳴提醒，飲水後重置計時器。
+**職責**：只累積水杯穩定放置的主動時間；杯子拿走時暫停，放回後續算剩餘時間。到期後維持 alerted 狀態，只有有效喝水事件才重新計時；補水或無效重量變化不會重置。
 
 **位置**：`lib/ReminderManager/`
 
@@ -226,7 +226,7 @@ API 完整文件見 [api.md](api.md)。
 |------|------|
 | `init(uint32_t intervalMin, bool enabled)` | 設定提醒間隔（分鐘）與啟用狀態 |
 | `update()` | 由 `hydracup_control` 呼叫，驅動提醒計時器 |
-| `resetTimer()` | 重置計時器（飲水確認後呼叫） |
+| `onDrinkConfirmed()` | 確認有效喝水後重新開始提醒週期 |
 | `setBuzzer(BuzzerController* buz)` | 注入蜂鳴器依賴 |
 | `setAppState(AppState* state)` | 注入 AppState 依賴 |
 | `setEnabled(bool en)` | 啟用/停用提醒 |
@@ -234,7 +234,7 @@ API 完整文件見 [api.md](api.md)。
 | `setAlertTimeoutSec(uint32_t sec)` | 動態更新提醒持續時間 |
 | `getNextReminderSec()` | 取得下次提醒倒數（秒） |
 
-提醒蜂鳴使用 `BeepPattern::REMINDER`，`_alertTimeoutMs` 後自動停止蜂鳴。`BEEP_CYCLE_GAP_MS = 800` 為蜂鳴循環間隔。
+提醒蜂鳴使用 `BeepPattern::REMINDER`，`_alertTimeoutMs` 後只停止聲音，狀態仍維持 alerted，直到有效喝水、稍後提醒或暫停。`BEEP_CYCLE_GAP_MS = 800` 為蜂鳴循環間隔。
 
 ---
 

@@ -32,7 +32,13 @@ struct RuntimeSnapshot {
     long tareOffset = 0;
     CupState cupState = CupState::NO_CUP;
     uint32_t drinkCountToday = 0;
+    uint32_t dailyGoalMl = 0;
+    uint32_t reminderIntervalMin = 0;
+    bool reminderEnabled = false;
     uint32_t nextReminderSec = 0;
+    char reminderState[24] = {};
+    char reminderPausedUntilDate[16] = {};
+    char lastDrinkAt[32] = {};
     char ipAddress[16] = {};
 };
 

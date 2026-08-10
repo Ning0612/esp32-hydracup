@@ -11,6 +11,7 @@
 class AppState;
 struct AppConfig;
 class BuzzerController;
+class CloudSyncClient;
 class DiscordNotifier;
 class EventLogger;
 class MqttPublisher;
@@ -35,6 +36,7 @@ public:
     void setEventLogger(EventLogger* value) { _eventLog = value; }
     void setTimeManager(TimeManager* value) { _time = value; }
     void setMqttPublisher(MqttPublisher* value) { _mqtt = value; }
+    void setCloudSyncClient(CloudSyncClient* value) { _cloudSync = value; }
     void setCounterPersistence(DrinkCounterPersistence* store) {
         _counterStore = store; _events.setPersistence(store);
     }
@@ -42,6 +44,7 @@ public:
     float getTodayTotalMl() const { return _events.getTodayTotalMl(); }
     float getLastDrinkMl() const { return _events.getLastDrinkMl(); }
     uint32_t getDrinkCountToday() const { return _events.getDrinkCountToday(); }
+    static const char* cupStateName(CupState state) { return _cupStateName(state); }
     void resetDailyCounters();
 
 private:
@@ -70,6 +73,7 @@ private:
     EventLogger* _eventLog = nullptr;
     TimeManager* _time = nullptr;
     MqttPublisher* _mqtt = nullptr;
+    CloudSyncClient* _cloudSync = nullptr;
     DrinkCounterPersistence* _counterStore = nullptr;
     bool _nvsDone = false;
     enum class RestoreState : uint8_t { IDLE, LOADING, READY, FAILED };
