@@ -32,7 +32,7 @@
 
   <section class="local-cup-hero state-off" id="main-banner">
     <div class="local-cup-visual" id="cup-visual" aria-hidden="true">
-      <div class="local-drop"></div><div class="local-cup-water"></div><div class="local-cup-body"></div><i></i><i></i>
+      <div class="local-drop"></div><div class="local-cup-handle"></div><div class="local-cup-water"></div><svg class="local-cup-body" viewBox="0 0 92 122" aria-hidden="true" focusable="false"><defs><linearGradient id="local-cup-glass" x1="0" y1="0" x2="1" y2="0"><stop offset="0" class="glass-shine"/><stop offset=".28" class="glass-fill"/><stop offset=".72" class="glass-fill"/><stop offset="1" class="glass-shine"/></linearGradient></defs><path d="M2 2 H90 L81 103 Q80 120 66 120 H26 Q12 120 11 103 Z"/></svg><i></i><i></i>
     </div>
     <div class="local-cup-copy"><div class="status-label">CUP &amp; REMINDER / LIVE</div><div class="status-value" id="hero-state">等待資料</div>
       <p id="hero-detail">放上水杯並穩定後，才會開始飲水與提醒計時。</p></div>
@@ -43,11 +43,18 @@
   <div class="feature-grid">
     <section class="card"><h2><span>01</span>杯重與杯況</h2><div class="label">即時重量</div><div class="num-xl" id="wt">-- g</div><span class="state-chip" id="st">等待資料</span><p class="info">數值每 2 秒更新一次；重量穩定後會判斷飲水事件。</p></section>
     <section class="card local-today-card"><h2><span>02</span>今日進度</h2>
-      <div class="local-progress-gauge" id="today-gauge" style="--level:0%" role="img" aria-label="今日已喝 0 ml，達成 0%">
-        <div class="local-progress-water"><i></i><i></i></div>
-        <div class="local-progress-copy"><strong id="today">0</strong><span>ml</span><small id="today-pct">0%</small></div>
+      <div class="local-gauge-stage band-empty" id="gauge-stage" style="--level:0%">
+        <button class="local-progress-gauge" id="today-gauge" type="button" data-summary="今天從第一口開始" aria-label="今日已喝 0 ml，達成 0%，按下查看摘要">
+          <span class="local-progress-water"><i></i><i></i></span>
+          <span class="local-gauge-bubbles" aria-hidden="true"><i></i><i></i><i></i></span>
+          <span class="local-gauge-event" aria-hidden="true"><i class="local-event-drop"></i><i class="local-event-drop"></i><i class="local-event-drop"></i><i class="local-event-splash"></i><i class="local-event-ripple"></i></span>
+          <span class="local-progress-copy"><strong id="today">0</strong><span>ml</span><small id="today-pct">0%</small></span>
+        </button>
+        <span class="local-gauge-overflow" aria-hidden="true"><i></i><i></i><b></b></span>
+        <output class="local-drink-gain" id="drink-gain" aria-live="polite"></output>
       </div>
       <p class="local-goal-line"><span id="today-goal">目標 -- ml</span><i></i><span id="today-count">0 次飲水</span></p>
+      <output class="local-gauge-feedback" id="gauge-feedback" aria-live="polite"></output>
     </section>
   </div>
 
@@ -84,15 +91,58 @@ const STATE_DETAILS = {
   refill_detected:'補水只更新杯中重量，不會被算成飲水量。'
 };
 const REMINDER_NAMES = { waiting_for_cup:'放上杯子後開始', counting:'計時中', paused_cup_away:'杯子離開，已暫停', alerted:'需要喝水', snoozed:'稍後提醒', paused_today:'今天已暫停', disabled:'已停用' };
+const PROGRESS_BANDS = ['band-empty','band-starting','band-building','band-steady','band-near','band-goal','band-overflow','band-overflow-strong','band-overflow-capped'];
+let lastHydrationSnapshot = null, gaugeFeedbackTimer = 0, drinkAnimationTimer = 0, pollInFlight = false;
 function setDot(id, cls) { document.getElementById(id).className = 'dot ' + (cls || ''); }
 function setVal(id, t) { document.getElementById(id).textContent = t; }
+function progressState(total, goal) {
+  const percent = Math.max(0, Math.round(total * 100 / Math.max(1, goal)));
+  let band = 'empty';
+  if (percent >= 150) band = 'overflow-capped'; else if (percent >= 120) band = 'overflow-strong';
+  else if (percent > 100) band = 'overflow'; else if (percent === 100) band = 'goal';
+  else if (percent >= 75) band = 'near'; else if (percent >= 50) band = 'steady';
+  else if (percent >= 25) band = 'building'; else if (percent > 0) band = 'starting';
+  const summary = total <= 0 ? '今天從第一口開始' : percent < 100 ? '今天還差 ' + Math.max(0, goal - total) + ' ml 達成目標' : percent === 100 ? '今天剛好達成飲水目標' : '今天已超過目標 ' + Math.max(0, total - goal) + ' ml';
+  return { percent:percent, visualPercent:Math.min(100, percent), band:band, summary:summary };
+}
+function playDrinkAnimation(amount, crossedGoal) {
+  if (document.hidden) return;
+  const stage = document.getElementById('gauge-stage'), gain = document.getElementById('drink-gain');
+  stage.dataset.drops = amount <= 120 ? '1' : amount <= 280 ? '2' : '3'; gain.textContent = '+' + amount + ' ml';
+  stage.classList.remove('is-drink-event','is-goal-crossing'); void stage.offsetWidth; stage.classList.add('is-drink-event');
+  if (crossedGoal) stage.classList.add('is-goal-crossing');
+  clearTimeout(drinkAnimationTimer); drinkAnimationTimer = setTimeout(function () { stage.classList.remove('is-drink-event','is-goal-crossing'); gain.textContent = ''; }, 1900);
+}
+function bindGaugeInteraction() {
+  const gauge = document.getElementById('today-gauge');
+  gauge.addEventListener('click', function (event) {
+    const rect = gauge.getBoundingClientRect(), direction = event.detail === 0 ? 'center' : event.clientX < rect.left + rect.width / 2 ? 'left' : 'right';
+    gauge.classList.remove('tap-left','tap-center','tap-right'); requestAnimationFrame(function () { gauge.classList.add('tap-' + direction); });
+    const feedback = document.getElementById('gauge-feedback'); feedback.textContent = gauge.dataset.summary || ''; feedback.classList.add('visible');
+    clearTimeout(gaugeFeedbackTimer); gaugeFeedbackTimer = setTimeout(function () { feedback.classList.remove('visible'); }, 2800);
+  });
+  gauge.addEventListener('animationend', function () { gauge.classList.remove('tap-left','tap-center','tap-right'); });
+}
 function update(d) {
   const state = STATE_NAMES[d.cup_state_name] || d.cup_state_name || '等待資料';
   const banner = document.getElementById('main-banner'); banner.className = 'local-cup-hero state-' + (d.cup_state_name || 'off');
   document.getElementById('cup-visual').className = 'local-cup-visual state-' + (d.cup_state_name || 'off');
   setVal('wt', d.weight_g != null ? Math.round(d.weight_g) + ' g' : '-- g'); setVal('st', state); setVal('hero-state', state); setVal('hero-detail', STATE_DETAILS[d.cup_state_name] || '正在等待下一筆裝置狀態。');
-  const t = d.today_total_ml || 0, g = d.daily_goal_ml || 2000, p = g > 0 ? Math.min(100, Math.round(t * 100 / g)) : 0;
-  const count = d.drink_count_today || 0; setVal('today', Math.round(t)); setVal('today-pct', p + '%'); setVal('today-goal', '目標 ' + g + ' ml'); setVal('today-count', count + ' 次飲水'); const gauge = document.getElementById('today-gauge'); gauge.style.setProperty('--level', p + '%'); gauge.classList.toggle('done', p >= 100); gauge.setAttribute('aria-label', '今日已喝 ' + Math.round(t) + ' ml，達成 ' + p + '%');
+  const t = Math.max(0, Math.round(Number(d.today_total_ml) || 0)), g = Math.max(1, Math.round(Number(d.daily_goal_ml) || 2000)), count = Math.max(0, Math.round(Number(d.drink_count_today) || 0));
+  const progress = progressState(t, g), stage = document.getElementById('gauge-stage'), gauge = document.getElementById('today-gauge');
+  setVal('today', t); setVal('today-pct', progress.percent + '%'); setVal('today-goal', '目標 ' + g + ' ml'); setVal('today-count', count + ' 次飲水');
+  PROGRESS_BANDS.forEach(function (name) { stage.classList.remove(name); }); stage.classList.add('band-' + progress.band); stage.style.setProperty('--level', progress.visualPercent + '%');
+  gauge.dataset.summary = progress.summary; gauge.setAttribute('aria-label', '今日已喝 ' + t + ' ml，達成 ' + progress.percent + '%，按下查看摘要');
+  const snapshot = { total:t, count:count };
+  if (lastHydrationSnapshot) {
+    const resetObserved = count < lastHydrationSnapshot.count || t < lastHydrationSnapshot.total;
+    if (!resetObserved && count > lastHydrationSnapshot.count && t > lastHydrationSnapshot.total) {
+      playDrinkAnimation(t - lastHydrationSnapshot.total, lastHydrationSnapshot.total < g && t >= g);
+    } else if (resetObserved && count > 0 && t > 0) {
+      playDrinkAnimation(t, t >= g);
+    }
+  }
+  lastHydrationSnapshot = snapshot;
   setVal('last', d.last_drink_ml > 0 ? Math.round(d.last_drink_ml) + ' ml' : '--'); const s = d.next_reminder_sec || 0; const rs = d.reminder_state || ''; const reminderPaused = ['waiting_for_cup', 'paused_cup_away', 'paused_today', 'disabled'].includes(rs); setVal('next', !reminderPaused && s > 0 ? (s >= 60 ? Math.ceil(s / 60) + ' 分鐘後' : s + ' 秒後') : (REMINDER_NAMES[rs] || '--'));
   setVal('updated-at', new Date().toLocaleTimeString('zh-TW', { hour12:false })); document.getElementById('connection-msg').style.display = 'none';
   setDot('d-ntp', d.ntp_synced ? 'ok' : 'warn'); setVal('v-ntp', d.ntp_synced ? '已同步' : '未同步');
@@ -102,8 +152,13 @@ function update(d) {
   setDot('d-pair', d.cloud_pairing_code ? 'ok' : ''); setVal('v-pair', d.cloud_pairing_code || '已綁定／等待產生');
   setDot('d-hx', d.hw_hx711 ? 'ok' : 'err'); setVal('v-hx', d.hw_hx711 ? '正常' : '異常'); setDot('d-ol', d.hw_oled ? 'ok' : 'warn'); setVal('v-ol', d.hw_oled ? '正常' : '異常');
 }
-function poll() { hydraFetch('/api/status').then(r => r.json()).then(update).catch(() => { const banner = document.getElementById('main-banner'); banner.className = 'local-cup-hero state-off'; document.getElementById('cup-visual').className = 'local-cup-visual state-off'; setVal('hero-state', '暫時離線'); setVal('hero-detail', '裝置連線中斷，畫面會自動重試。'); const el = document.getElementById('connection-msg'); el.textContent = '暫時無法連線：正在重試…'; el.className = 'message error'; el.style.display = 'block'; }); }
-poll(); setInterval(poll, 2000);
+function poll() {
+  if (pollInFlight) return; pollInFlight = true;
+  const controller = new AbortController(), timeout = setTimeout(function () { controller.abort(); }, 1800);
+  hydraFetch('/api/status', { signal:controller.signal }).then(r => r.json()).then(update).catch(() => { const banner = document.getElementById('main-banner'); banner.className = 'local-cup-hero state-off'; document.getElementById('cup-visual').className = 'local-cup-visual state-off'; setVal('hero-state', '暫時離線'); setVal('hero-detail', '裝置連線中斷，畫面會自動重試。'); const el = document.getElementById('connection-msg'); el.textContent = '暫時無法連線：正在重試…'; el.className = 'message error'; el.style.display = 'block'; }).finally(function () { clearTimeout(timeout); pollInFlight = false; });
+}
+function syncPageVisibility() { document.documentElement.classList.toggle('page-hidden', document.hidden); }
+bindGaugeInteraction(); document.addEventListener('visibilitychange', syncPageVisibility); syncPageVisibility(); poll(); setInterval(poll, 2000);
 </script>
 </body>
 </html>
