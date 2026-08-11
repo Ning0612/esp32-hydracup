@@ -102,6 +102,38 @@ Discord 通知類型：
 
 ---
 
+## Cloud sync
+
+Cloud sync 將 ESP32 已確認的飲水／補水事件透過 HTTPS durable outbox 同步至獨立的
+HydraCup Service。ESP32 仍是飲水事件與提醒狀態的唯一真實來源，雲端 WebUI 不提供
+手動新增飲水量。
+
+| 設定 | API 欄位 | 說明 |
+|------|---------|------|
+| 啟用 HTTPS 同步 | `cloudEnabled` | 開啟裝置背景同步；變更後需重新啟動 |
+| Service URL | `cloudBaseUrl` | 只填 HTTPS origin，例如 `https://hydracup-service.pages.dev` |
+| Device ID | `cloudDeviceId` | 首次啟動由裝置依 MAC 產生；WebUI 唯讀顯示 |
+| Device token SHA-256 | `cloudDeviceTokenHash` | 供 Cloudflare allowlist 使用；不是 raw token，WebUI 唯讀顯示 |
+
+Service URL 不可附加 `/api/v1/device/sync`，前後也不可留下空白。背景 worker 每 15 秒同步
+一次；新事件或 command ACK 會要求提早同步。登入後的裝置首頁「04 裝置狀態」會顯示：
+
+- `正常 · 待送 0`／HTTP `200`：最近一次同步成功，durable outbox 已送完。
+- `待送 N`：尚有事件等待 server ACK；短暫離線時屬正常現象。
+- HTTP `401`：Device ID 或 token hash 與部署環境 allowlist 不一致。
+- HTTP `--`：尚未送出，或 HTTPS 在取得 HTTP status 前失敗；先檢查 URL 空白、DNS、網路與 TLS 時間。
+- `儲存失敗 N 筆`：LittleFS outbox 與 NVS emergency overflow 都無法保存事件，需立即排查儲存空間。
+
+裝置未綁定時，第一次成功同步會在同區顯示 8 碼、10 分鐘有效的「WebUI 配對碼」。
+配對完成後 server 回傳 `deviceBound=true`，裝置會清除顯示中的配對碼。完整 LINE／LIFF
+使用流程見
+[HydraCup Service 使用指南](https://github.com/Ning0612/hydracup-service/blob/main/docs/user-guide.md)。
+
+Raw device token 只存在 ESP32 NVS，不會顯示在 WebUI，也不應放入 Cloudflare、repo、文件
+或訊息。Device Console 目前使用 LAN HTTP，請只在信任的隔離網路操作。
+
+---
+
 ## AP 模式設定
 
 | 設定 | API 欄位 | 預設值 | 說明 |
