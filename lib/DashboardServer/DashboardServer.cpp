@@ -1,6 +1,7 @@
 #include "DashboardServer.h"
 
 #include <algorithm>
+#include <cctype>
 #include <cstdio>
 #include <cstring>
 #include <cstdlib>
@@ -8,6 +9,7 @@
 
 #include "AppState.h"
 #include "BuzzerController.h"
+#include "CloudSyncClient.h"
 #include "ConfigManager.h"
 #include "DiscordNotifier.h"
 #include "EventLogger.h"
@@ -44,15 +46,53 @@ std::string stringValue(cJSON* object, const char* key) {
     cJSON* value = cJSON_GetObjectItemCaseSensitive(object, key);
     return value && cJSON_IsString(value) && value->valuestring ? value->valuestring : "";
 }
+
+bool normalizeCloudOrigin(const std::string& input, std::string& output) {
+    const auto isSpace = [](unsigned char value) { return std::isspace(value) != 0; };
+    auto first = std::find_if_not(input.begin(), input.end(), isSpace);
+    auto last = std::find_if_not(input.rbegin(), input.rend(), isSpace).base();
+    output = first < last ? std::string(first, last) : "";
+    while (!output.empty() && output.back() == '/') output.pop_back();
+    if (output.empty()) return true;
+    if (output.size() >= 192) return false;
+    constexpr size_t schemeLength = 8;
+    if (output.rfind("https://", 0) != 0 || output.size() == schemeLength) return false;
+    const std::string authority = output.substr(schemeLength);
+    if (authority.find_first_of("/?#@") != std::string::npos ||
+        std::any_of(authority.begin(), authority.end(), isSpace)) return false;
+    const size_t colon = authority.rfind(':');
+    if (colon != std::string::npos) {
+        if (authority.find(':') != colon || colon == 0 || colon + 1 == authority.size()) return false;
+        const std::string portText = authority.substr(colon + 1);
+        if (!std::all_of(portText.begin(), portText.end(), [](unsigned char value) { return std::isdigit(value) != 0; })) return false;
+        const unsigned long port = std::strtoul(portText.c_str(), nullptr, 10);
+        if (port == 0 || port > 65535) return false;
+    }
+    const std::string host = authority.substr(0, colon);
+    if (host.empty() || host.front() == '.' || host.back() == '.') return false;
+    bool labelStart = true;
+    bool previousHyphen = false;
+    for (unsigned char value : host) {
+        if (value == '.') {
+            if (labelStart || previousHyphen) return false;
+            labelStart = true; previousHyphen = false; continue;
+        }
+        if (!(std::isalnum(value) || value == '-')) return false;
+        if (labelStart && value == '-') return false;
+        labelStart = false; previousHyphen = value == '-';
+    }
+    return !labelStart && !previousHyphen;
+}
 }
 
 void DashboardServer::begin(ScaleManager& scale, ConfigManager& cfgMgr, AppState& state, AppConfig& cfg,
                             BuzzerController& buzzer, ReminderManager& reminder, bool logFsOk,
                             RuntimeCoordinator& runtime, EventLogger& eventLogger,
-                            DiscordNotifier& discord, WiFiManager& wifi) {
+                            DiscordNotifier& discord, WiFiManager& wifi,
+                            CloudSyncClient& cloudSync) {
     _scale = &scale; _cfgMgr = &cfgMgr; _state = &state; _cfg = &cfg; _buzzer = &buzzer;
     _reminder = &reminder; _logFsOk = logFsOk; _runtime = &runtime; _eventLogger = &eventLogger;
-    _discord = &discord; _wifi = &wifi; _preAuthCsrfToken = http_random_token();
+    _discord = &discord; _wifi = &wifi; _cloudSync = &cloudSync; _preAuthCsrfToken = http_random_token();
     httpd_config_t config = HTTPD_DEFAULT_CONFIG();
     config.server_port = 80;
     config.max_uri_handlers = 32;
@@ -101,27 +141,45 @@ esp_err_t DashboardServer::_handleGet(httpd_req_t* request) {
         const RuntimeSnapshot snapshot = _runtime ? _runtime->snapshot() : RuntimeSnapshot{};
         cJSON* doc = cJSON_CreateObject(); cJSON_AddBoolToObject(doc, "ok", true);
         cJSON_AddNumberToObject(doc, "weight_g", _runtime && _runtime->isControlRunning() ? snapshot.weightGrams : _scale->getWeightGrams());
-        cJSON_AddNumberToObject(doc, "cup_state", static_cast<int>(_state->cupState));
+        cJSON_AddNumberToObject(doc, "cup_state", static_cast<int>(snapshot.cupState));
         _sendJson(request, jsonString(doc)); cJSON_Delete(doc); return ESP_OK;
     }
     if (uri == "/api/status") {
         if (!_requireApiAuth(request, false)) return ESP_OK;
         const RuntimeSnapshot snapshot = _runtime ? _runtime->snapshot() : RuntimeSnapshot{};
         const bool rtos = _runtime && _runtime->isControlRunning();
-        const CupState cup = rtos ? snapshot.cupState : _state->cupState;
+        const CupState cup = snapshot.cupState;
         cJSON* doc = cJSON_CreateObject(); cJSON_AddBoolToObject(doc, "ok", true);
         cJSON_AddStringToObject(doc, "mode", "normal");
-        cJSON_AddBoolToObject(doc, "wifi_connected", rtos ? snapshot.wifiConnected : _state->wifiConnected);
-        cJSON_AddStringToObject(doc, "ip", rtos ? snapshot.ipAddress : _state->ipAddress.c_str());
-        cJSON_AddBoolToObject(doc, "ntp_synced", rtos ? snapshot.ntpSynced : _state->ntpSynced);
-        cJSON_AddNumberToObject(doc, "weight_g", rtos ? snapshot.weightGrams : _scale->getWeightGrams());
+        cJSON_AddBoolToObject(doc, "wifi_connected", snapshot.wifiConnected);
+        cJSON_AddStringToObject(doc, "ip", snapshot.ipAddress);
+        cJSON_AddBoolToObject(doc, "ntp_synced", snapshot.ntpSynced);
+        cJSON_AddNumberToObject(doc, "weight_g", snapshot.weightGrams);
         cJSON_AddNumberToObject(doc, "cup_state", static_cast<int>(cup));
         cJSON_AddStringToObject(doc, "cup_state_name", _cupStateStr(cup));
-        cJSON_AddNumberToObject(doc, "today_total_ml", rtos ? snapshot.todayTotalMl : _state->todayTotalMl);
-        cJSON_AddNumberToObject(doc, "daily_goal_ml", _cfg->dailyGoalMl);
-        cJSON_AddNumberToObject(doc, "drink_count_today", rtos ? snapshot.drinkCountToday : _state->drinkCountToday);
-        cJSON_AddNumberToObject(doc, "last_drink_ml", rtos ? snapshot.lastDrinkMl : _state->lastDrinkMl);
-        cJSON_AddNumberToObject(doc, "next_reminder_sec", rtos ? snapshot.nextReminderSec : _state->nextReminderSec);
+        cJSON_AddNumberToObject(doc, "today_total_ml", snapshot.todayTotalMl);
+        cJSON_AddNumberToObject(doc, "daily_goal_ml", snapshot.dailyGoalMl);
+        cJSON_AddNumberToObject(doc, "drink_count_today", snapshot.drinkCountToday);
+        cJSON_AddNumberToObject(doc, "last_drink_ml", snapshot.lastDrinkMl);
+        cJSON_AddNumberToObject(doc, "next_reminder_sec", snapshot.nextReminderSec);
+        cJSON_AddStringToObject(doc, "reminder_state", snapshot.reminderState);
+        cJSON_AddStringToObject(doc, "last_drink_at", snapshot.lastDrinkAt);
+        cJSON_AddBoolToObject(doc, "cloud_configured", _cloudSync && _cloudSync->isConfigured());
+        cJSON_AddBoolToObject(doc, "cloud_last_ok", _cloudSync && _cloudSync->lastSyncOk());
+        cJSON_AddNumberToObject(doc, "cloud_pending_events", _cloudSync ? _cloudSync->pendingEvents() : 0);
+        cJSON_AddNumberToObject(doc, "cloud_last_sync_age_sec", _cloudSync ? _cloudSync->lastSyncAgeSec() : 0);
+        cJSON_AddNumberToObject(doc, "cloud_last_http_status", _cloudSync ? _cloudSync->lastHttpStatus() : 0);
+        cJSON_AddNumberToObject(doc, "cloud_queue_drops", _cloudSync ? _cloudSync->droppedEvents() : 0);
+        cJSON_AddStringToObject(doc, "cloud_history_backfill_state",
+                                _cloudSync ? _cloudSync->historyBackfillState() : "idle");
+        cJSON_AddBoolToObject(doc, "cloud_history_backfill_running",
+                              _cloudSync && _cloudSync->historyBackfillRunning());
+        cJSON_AddNumberToObject(doc, "cloud_history_backfill_uploaded_days",
+                                _cloudSync ? _cloudSync->historyBackfillUploadedDays() : 0);
+        cJSON_AddNumberToObject(doc, "cloud_history_backfill_http_status",
+                                _cloudSync ? _cloudSync->historyBackfillHttpStatus() : 0);
+        const std::string pairingCode = _cloudSync ? _cloudSync->pairingCode() : "";
+        cJSON_AddStringToObject(doc, "cloud_pairing_code", pairingCode.c_str());
         cJSON_AddBoolToObject(doc, "webhook_configured", _state->webhookConfigured);
         cJSON_AddBoolToObject(doc, "webhook_last_ok", _state->webhookLastOk.load());
         cJSON_AddBoolToObject(doc, "discord_worker_ready", _discord && _discord->isWorkerReady());
@@ -137,17 +195,19 @@ esp_err_t DashboardServer::_handleGet(httpd_req_t* request) {
     }
     if (uri == "/api/config") {
         if (!_requireApiAuth(request, false)) return ESP_OK;
+        const RuntimeSnapshot snapshot = _runtime ? _runtime->snapshot() : RuntimeSnapshot{};
         cJSON* doc = cJSON_CreateObject(); cJSON_AddBoolToObject(doc, "ok", true);
 #define ADD_STR(key, value) cJSON_AddStringToObject(doc, key, value.c_str())
         ADD_STR("wifiSsid", _cfg->wifiSsid); cJSON_AddStringToObject(doc, "wifiPassword", "****"); cJSON_AddBoolToObject(doc, "wifiPasswordSet", !_cfg->wifiPassword.empty());
-        ADD_STR("discordWebhookUrl", _maskWebhookUrl(_cfg->discordWebhookUrl)); cJSON_AddBoolToObject(doc, "reminderEnabled", _cfg->reminderEnabled);
-        cJSON_AddNumberToObject(doc, "reminderIntervalMin", _cfg->reminderIntervalMin); cJSON_AddNumberToObject(doc, "reminderAlertTimeoutSec", _cfg->reminderAlertTimeoutSec);
-        cJSON_AddNumberToObject(doc, "dailyGoalMl", _cfg->dailyGoalMl); cJSON_AddBoolToObject(doc, "buzzerEnabled", _cfg->buzzerEnabled);
+        ADD_STR("discordWebhookUrl", _maskWebhookUrl(_cfg->discordWebhookUrl)); cJSON_AddBoolToObject(doc, "reminderEnabled", snapshot.reminderEnabled);
+        cJSON_AddBoolToObject(doc, "cloudEnabled", _cfg->cloudEnabled); ADD_STR("cloudBaseUrl", _cfg->cloudBaseUrl); ADD_STR("cloudDeviceId", _cfg->cloudDeviceId);
+        const std::string cloudTokenHash = _cloudSync ? _cloudSync->tokenHash() : ""; ADD_STR("cloudDeviceTokenHash", cloudTokenHash);
+        cJSON_AddNumberToObject(doc, "reminderIntervalMin", snapshot.reminderIntervalMin); cJSON_AddNumberToObject(doc, "reminderAlertTimeoutSec", _cfg->reminderAlertTimeoutSec);
+        cJSON_AddNumberToObject(doc, "dailyGoalMl", snapshot.dailyGoalMl); cJSON_AddBoolToObject(doc, "buzzerEnabled", _cfg->buzzerEnabled);
         cJSON_AddNumberToObject(doc, "buzzerFrequencyHz", _cfg->buzzerFrequencyHz); cJSON_AddNumberToObject(doc, "buzzerDurationMs", _cfg->buzzerDurationMs); cJSON_AddNumberToObject(doc, "buzzerVolumePercent", _cfg->buzzerVolumePercent);
         cJSON_AddBoolToObject(doc, "ntpEnabled", _cfg->ntpEnabled); ADD_STR("ntpServer1", _cfg->ntpServer1); ADD_STR("ntpServer2", _cfg->ntpServer2); cJSON_AddNumberToObject(doc, "timezoneOffsetSec", _cfg->timezoneOffsetSec);
         cJSON_AddBoolToObject(doc, "mqttEnabled", _cfg->mqttEnabled); ADD_STR("mqttBrokerHost", _cfg->mqttBrokerHost); cJSON_AddNumberToObject(doc, "mqttBrokerPort", _cfg->mqttBrokerPort); ADD_STR("mqttUsername", _cfg->mqttUsername); cJSON_AddStringToObject(doc, "mqttPassword", "****"); cJSON_AddBoolToObject(doc, "mqttPasswordSet", !_cfg->mqttPassword.empty()); ADD_STR("mqttClientId", _cfg->mqttClientId); cJSON_AddNumberToObject(doc, "mqttHeartbeatSec", _cfg->mqttHeartbeatSec);
 #undef ADD_STR
-        const RuntimeSnapshot snapshot = _runtime ? _runtime->snapshot() : RuntimeSnapshot{};
         cJSON_AddNumberToObject(doc, "calibrationFactor", _runtime && _runtime->isControlRunning() ? snapshot.calibrationFactor : _scale->getCalibrationFactor());
         cJSON_AddNumberToObject(doc, "cupPresentThresholdGram", _cfg->cupPresentThresholdGram); cJSON_AddNumberToObject(doc, "stableToleranceGram", _cfg->stableToleranceGram); cJSON_AddNumberToObject(doc, "stableDurationMs", _cfg->stableDurationMs); cJSON_AddNumberToObject(doc, "minDrinkDeltaMl", _cfg->minDrinkDeltaMl); cJSON_AddNumberToObject(doc, "maxDrinkDeltaMl", _cfg->maxDrinkDeltaMl);
         _sendJson(request, jsonString(doc)); cJSON_Delete(doc); return ESP_OK;
@@ -199,6 +259,13 @@ esp_err_t DashboardServer::_handlePost(httpd_req_t* request) {
     }
     if (uri == "/api/auth/logout") { if (!_requireApiAuth(request, true)) return ESP_OK; _clearSession(); httpd_resp_set_hdr(request, "Set-Cookie", "session=; Max-Age=0; Path=/; HttpOnly; SameSite=Strict"); _sendJson(request, "{\"ok\":true}"); return ESP_OK; }
     if (uri == "/api/reboot") { if (!_requireApiAuth(request, true)) return ESP_OK; _sendJson(request, "{\"ok\":true}"); http_restart_after_response(); return ESP_OK; }
+    if (uri == "/api/cloud/history-backfill") {
+        if (!_requireApiAuth(request, true)) return ESP_OK;
+        if (!_logFsOk) { _sendJson(request, "{\"ok\":false,\"error\":\"logfs_unavailable\"}", 503); return ESP_OK; }
+        if (!_cloudSync || !_cloudSync->isConfigured()) { _sendJson(request, "{\"ok\":false,\"error\":\"cloud_not_configured\"}", 409); return ESP_OK; }
+        if (!_cloudSync->requestHistoryBackfill()) { _sendJson(request, "{\"ok\":false,\"error\":\"history_backfill_queue_failed\"}", 503); return ESP_OK; }
+        _sendJson(request, "{\"ok\":true,\"state\":\"queued\"}", 202); return ESP_OK;
+    }
     if (uri == "/api/tare") {
         if (!_requireApiAuth(request, true)) return ESP_OK;
         ControlResult result;
@@ -218,6 +285,39 @@ esp_err_t DashboardServer::_handlePost(httpd_req_t* request) {
     if (uri == "/api/config") {
         if (!_requireApiAuth(request, true)) return ESP_OK;
         doc = parseBody(request, body); if (!doc) { _sendJson(request, "{\"ok\":false,\"error\":\"Invalid JSON\"}", 400); return ESP_OK; }
+        std::string normalizedCloudOrigin;
+        if (has(doc, "cloudBaseUrl") &&
+            (!cJSON_IsString(cJSON_GetObjectItem(doc, "cloudBaseUrl")) ||
+             !normalizeCloudOrigin(stringValue(doc, "cloudBaseUrl"), normalizedCloudOrigin))) {
+            cJSON_Delete(doc); _sendJson(request, "{\"ok\":false,\"error\":\"cloudBaseUrl must be an HTTPS origin\"}", 400); return ESP_OK;
+        }
+        const bool cloudWillBeEnabled = boolean(doc, "cloudEnabled")
+            ? cJSON_IsTrue(cJSON_GetObjectItem(doc, "cloudEnabled")) : _cfg->cloudEnabled;
+        const std::string cloudOriginAfterUpdate = has(doc, "cloudBaseUrl")
+            ? normalizedCloudOrigin : _cfg->cloudBaseUrl;
+        if (cloudWillBeEnabled && cloudOriginAfterUpdate.empty()) {
+            cJSON_Delete(doc); _sendJson(request, "{\"ok\":false,\"error\":\"cloudBaseUrl is required when cloud sync is enabled\"}", 400); return ESP_OK;
+        }
+        const int timezoneAfterUpdate = number(doc, "timezoneOffsetSec")
+            ? static_cast<int>(std::clamp(cJSON_GetObjectItem(doc, "timezoneOffsetSec")->valuedouble,
+                                          -43200.0, 50400.0))
+            : _cfg->timezoneOffsetSec;
+        if (cloudWillBeEnabled && timezoneAfterUpdate + _cfg->daylightOffsetSec != 8 * 3600) {
+            cJSON_Delete(doc); _sendJson(request, "{\"ok\":false,\"error\":\"cloud sync requires UTC+8 timezone\"}", 400); return ESP_OK;
+        }
+        const bool cloudConnectionWillChange =
+            (boolean(doc, "cloudEnabled") && cloudWillBeEnabled != _cfg->cloudEnabled) ||
+            (has(doc, "cloudBaseUrl") && cloudOriginAfterUpdate != _cfg->cloudBaseUrl);
+        if (cloudConnectionWillChange && _cloudSync && _cloudSync->historyBackfillRunning()) {
+            cJSON_Delete(doc); _sendJson(request, "{\"ok\":false,\"error\":\"history_backfill_in_progress\"}", 409); return ESP_OK;
+        }
+        const RuntimeSnapshot live = _runtime ? _runtime->snapshot() : RuntimeSnapshot{};
+        if (_runtime && _runtime->isControlRunning()) {
+            _cfg->reminderEnabled = live.reminderEnabled;
+            _cfg->reminderIntervalMin = live.reminderIntervalMin;
+            _cfg->dailyGoalMl = live.dailyGoalMl;
+            _cfg->reminderPausedUntilDate = live.reminderPausedUntilDate;
+        }
         bool reboot = false; bool applied = true;
         auto applyNumber = [&](const char* key, auto& target, double min, double max, bool needsReboot) { if (number(doc, key)) { target = static_cast<std::decay_t<decltype(target)>>(std::clamp(cJSON_GetObjectItem(doc, key)->valuedouble, min, max)); reboot |= needsReboot; } };
         if (boolean(doc, "reminderEnabled")) { _cfg->reminderEnabled = cJSON_IsTrue(cJSON_GetObjectItem(doc, "reminderEnabled")); applied &= _runCommand(ControlCommandType::SET_REMINDER_ENABLED, 0, 0, _cfg->reminderEnabled); }
@@ -231,11 +331,14 @@ esp_err_t DashboardServer::_handlePost(httpd_req_t* request) {
         if (has(doc, "wifiSsid") && cJSON_IsString(cJSON_GetObjectItem(doc, "wifiSsid"))) { _cfg->wifiSsid = stringValue(doc, "wifiSsid"); reboot = true; }
         if (has(doc, "wifiPassword") && cJSON_IsString(cJSON_GetObjectItem(doc, "wifiPassword")) && stringValue(doc, "wifiPassword") != "****") { _cfg->wifiPassword = stringValue(doc, "wifiPassword"); reboot = true; }
         if (has(doc, "discordWebhookUrl") && cJSON_IsString(cJSON_GetObjectItem(doc, "discordWebhookUrl")) && stringValue(doc, "discordWebhookUrl").find("****") == std::string::npos) _cfg->discordWebhookUrl = stringValue(doc, "discordWebhookUrl");
+        if (boolean(doc, "cloudEnabled")) { _cfg->cloudEnabled = cJSON_IsTrue(cJSON_GetObjectItem(doc, "cloudEnabled")); reboot = true; }
+        if (has(doc, "cloudBaseUrl")) { _cfg->cloudBaseUrl = normalizedCloudOrigin; reboot = true; }
         if (boolean(doc, "ntpEnabled")) { _cfg->ntpEnabled = cJSON_IsTrue(cJSON_GetObjectItem(doc, "ntpEnabled")); reboot = true; }
         if (has(doc, "ntpServer1")) { _cfg->ntpServer1 = stringValue(doc, "ntpServer1"); reboot = true; } if (has(doc, "ntpServer2")) { _cfg->ntpServer2 = stringValue(doc, "ntpServer2"); reboot = true; }
         applyNumber("timezoneOffsetSec", _cfg->timezoneOffsetSec, -43200, 50400, true); applyNumber("cupPresentThresholdGram", _cfg->cupPresentThresholdGram, 10, 500, true); applyNumber("stableToleranceGram", _cfg->stableToleranceGram, .5, 20, true); applyNumber("stableDurationMs", _cfg->stableDurationMs, 500, 10000, true); applyNumber("minDrinkDeltaMl", _cfg->minDrinkDeltaMl, 5, 100, true); applyNumber("maxDrinkDeltaMl", _cfg->maxDrinkDeltaMl, 50, 1000, true);
         if (boolean(doc, "mqttEnabled")) { _cfg->mqttEnabled = cJSON_IsTrue(cJSON_GetObjectItem(doc, "mqttEnabled")); reboot = true; } if (has(doc, "mqttBrokerHost")) { _cfg->mqttBrokerHost = stringValue(doc, "mqttBrokerHost"); reboot = true; } if (number(doc, "mqttBrokerPort")) { _cfg->mqttBrokerPort = static_cast<uint16_t>(std::clamp(cJSON_GetObjectItem(doc, "mqttBrokerPort")->valuedouble, 1.0, 65535.0)); reboot = true; } if (has(doc, "mqttUsername")) { _cfg->mqttUsername = stringValue(doc, "mqttUsername"); reboot = true; } if (has(doc, "mqttPassword") && stringValue(doc, "mqttPassword") != "****") { _cfg->mqttPassword = stringValue(doc, "mqttPassword"); reboot = true; } if (has(doc, "mqttClientId")) { _cfg->mqttClientId = stringValue(doc, "mqttClientId"); if (_cfg->mqttClientId.empty()) _cfg->mqttClientId = DEFAULT_MQTT_CLIENT_ID; reboot = true; } if (number(doc, "mqttHeartbeatSec")) { _cfg->mqttHeartbeatSec = static_cast<uint16_t>(std::clamp(cJSON_GetObjectItem(doc, "mqttHeartbeatSec")->valuedouble, 5.0, 3600.0)); reboot = true; }
-        _cfgMgr->save(*_cfg); if (_discord) _discord->configure(*_cfg); if (!applied) reboot = true;
+        if (!_cfgMgr->save(*_cfg)) { cJSON_Delete(doc); _sendJson(request, "{\"ok\":false,\"error\":\"config_applied_but_persist_failed\"}", 500); return ESP_OK; }
+        if (_discord) _discord->configure(*_cfg); if (_cloudSync) _cloudSync->configure(*_cfg); if (!applied) reboot = true;
         cJSON_Delete(doc); cJSON* response = cJSON_CreateObject(); cJSON_AddBoolToObject(response, "ok", true); cJSON_AddBoolToObject(response, "reboot_required", reboot); cJSON_AddBoolToObject(response, "control_applied", applied); _sendJson(request, jsonString(response)); cJSON_Delete(response); return ESP_OK;
     }
     http_send(request, "text/plain", "Not found", 404); return ESP_OK;

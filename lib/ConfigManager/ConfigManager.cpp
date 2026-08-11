@@ -4,6 +4,9 @@
 
 #include "config.h"
 #include "hal_log.h"
+#include "esp_mac.h"
+#include "esp_random.h"
+#include "esp_system.h"
 #include "nvs.h"
 #include "StorageLock.h"
 
@@ -62,6 +65,11 @@ bool writeConfig(nvs_handle_t handle, const AppConfig& cfg) {
     WRITE_STRING("wifi_ssid", wifiSsid);
     WRITE_STRING("wifi_pass", wifiPassword);
     WRITE_STRING("webhook_url", discordWebhookUrl);
+    WRITE_BOOL("cloud_en", cloudEnabled);
+    WRITE_STRING("cloud_url", cloudBaseUrl);
+    WRITE_STRING("cloud_dev", cloudDeviceId);
+    WRITE_STRING("cloud_token", cloudDeviceToken);
+    WRITE_STRING("rem_pause", reminderPausedUntilDate);
     WRITE_BOOL("rem_en", reminderEnabled);
     WRITE_UINT("rem_interval", reminderIntervalMin);
     WRITE_UINT("rem_alert_to", reminderAlertTimeoutSec);
@@ -106,17 +114,26 @@ bool writeConfig(nvs_handle_t handle, const AppConfig& cfg) {
 
 void ConfigManager::load(AppConfig& cfg) {
     _applyDefaults(cfg);
-    if (!lockNvs()) return;
+    if (!lockNvs()) {
+        _ensureCloudIdentity(cfg);
+        return;
+    }
 
     nvs_handle_t handle = 0;
     if (!openConfig(handle, NVS_READONLY)) {
         unlockNvs();
+        _ensureCloudIdentity(cfg);
         return;
     }
 
     cfg.wifiSsid = readString(handle, "wifi_ssid", cfg.wifiSsid);
     cfg.wifiPassword = readString(handle, "wifi_pass", cfg.wifiPassword);
     cfg.discordWebhookUrl = readString(handle, "webhook_url", cfg.discordWebhookUrl);
+    cfg.cloudEnabled = readValue<uint8_t>(handle, "cloud_en", cfg.cloudEnabled ? 1 : 0, nvs_get_u8) != 0;
+    cfg.cloudBaseUrl = readString(handle, "cloud_url", cfg.cloudBaseUrl);
+    cfg.cloudDeviceId = readString(handle, "cloud_dev", cfg.cloudDeviceId);
+    cfg.cloudDeviceToken = readString(handle, "cloud_token", cfg.cloudDeviceToken);
+    cfg.reminderPausedUntilDate = readString(handle, "rem_pause", cfg.reminderPausedUntilDate);
     cfg.reminderEnabled = readValue<uint8_t>(handle, "rem_en", cfg.reminderEnabled ? 1 : 0, nvs_get_u8) != 0;
     cfg.reminderIntervalMin = readValue<uint32_t>(handle, "rem_interval", cfg.reminderIntervalMin, nvs_get_u32);
     cfg.reminderAlertTimeoutSec = readValue<uint32_t>(handle, "rem_alert_to", cfg.reminderAlertTimeoutSec, nvs_get_u32);
@@ -151,6 +168,7 @@ void ConfigManager::load(AppConfig& cfg) {
 
     nvs_close(handle);
     unlockNvs();
+    _ensureCloudIdentity(cfg);
     LOG_INFO(TAG, "configuration loaded");
 }
 
@@ -198,6 +216,26 @@ bool ConfigManager::saveWifi(const std::string& ssid, const std::string& passwor
     return ok;
 }
 
+bool ConfigManager::saveReminderSettings(bool enabled, uint32_t intervalMin,
+                                         uint32_t dailyGoalMl,
+                                         const std::string& pausedUntilDate) {
+    if (!lockNvs()) return false;
+    nvs_handle_t handle = 0;
+    if (!openConfig(handle, NVS_READWRITE)) {
+        unlockNvs();
+        return false;
+    }
+    const bool ok = nvs_set_u8(handle, "rem_en", enabled ? 1 : 0) == ESP_OK &&
+                    nvs_set_u32(handle, "rem_interval", intervalMin) == ESP_OK &&
+                    nvs_set_u32(handle, "daily_goal", dailyGoalMl) == ESP_OK &&
+                    writeString(handle, "rem_pause", pausedUntilDate) &&
+                    nvs_commit(handle) == ESP_OK;
+    nvs_close(handle);
+    unlockNvs();
+    if (!ok) LOG_ERROR(TAG, "reminder settings save failed");
+    return ok;
+}
+
 void ConfigManager::clear() {
     if (!lockNvs()) return;
     nvs_handle_t handle = 0;
@@ -232,4 +270,35 @@ void ConfigManager::_applyDefaults(AppConfig& cfg) {
     cfg.maxDrinkDeltaMl = DEFAULT_MAX_DRINK_ML;
     cfg.apSsid = AP_DEFAULT_SSID;
     cfg.apPassword = AP_DEFAULT_PASSWORD;
+}
+
+void ConfigManager::_ensureCloudIdentity(AppConfig& cfg) {
+    if (!cfg.cloudDeviceId.empty() && cfg.cloudDeviceToken.size() == 64) return;
+
+    uint8_t mac[6] = {};
+    esp_read_mac(mac, ESP_MAC_WIFI_STA);
+    char deviceId[32];
+    std::snprintf(deviceId, sizeof(deviceId), "hydracup-%02x%02x%02x%02x%02x%02x",
+                  mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
+    cfg.cloudDeviceId = deviceId;
+
+    uint8_t random[32];
+    esp_fill_random(random, sizeof(random));
+    char token[65];
+    for (size_t i = 0; i < sizeof(random); ++i) {
+        std::snprintf(token + i * 2, 3, "%02x", random[i]);
+    }
+    token[64] = '\0';
+    cfg.cloudDeviceToken = token;
+
+    if (!lockNvs()) return;
+    nvs_handle_t handle = 0;
+    if (openConfig(handle, NVS_READWRITE)) {
+        const bool ok = writeString(handle, "cloud_dev", cfg.cloudDeviceId) &&
+                        writeString(handle, "cloud_token", cfg.cloudDeviceToken) &&
+                        nvs_commit(handle) == ESP_OK;
+        if (!ok) LOG_WARN(TAG, "cloud identity persistence failed");
+        nvs_close(handle);
+    }
+    unlockNvs();
 }

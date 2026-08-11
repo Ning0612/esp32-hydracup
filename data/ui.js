@@ -1,7 +1,7 @@
 (function () {
   'use strict';
 
-  var THEME_KEY = 'iot-ui-theme';
+  var THEME_KEY = 'hydracup-theme';
   var csrfToken = '';
 
   function isTheme(value) {

@@ -9,6 +9,7 @@
 
 class AppState;
 class BuzzerController;
+class CloudSyncClient;
 class ConfigManager;
 class DiscordNotifier;
 class EventLogger;
@@ -21,7 +22,7 @@ public:
     void begin(ScaleManager& scale, ConfigManager& cfgMgr, AppState& state, AppConfig& cfg,
                BuzzerController& buzzer, ReminderManager& reminder, bool logFsOk,
                RuntimeCoordinator& runtime, EventLogger& eventLogger,
-               DiscordNotifier& discord, WiFiManager& wifi);
+               DiscordNotifier& discord, WiFiManager& wifi, CloudSyncClient& cloudSync);
     void loop() {}
 
 private:
@@ -64,6 +65,7 @@ private:
     RuntimeCoordinator* _runtime = nullptr;
     EventLogger* _eventLogger = nullptr;
     DiscordNotifier* _discord = nullptr;
+    CloudSyncClient* _cloudSync = nullptr;
     WiFiManager* _wifi = nullptr;
     bool _logFsOk = false;
     std::string _sessionToken;

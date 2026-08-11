@@ -111,6 +111,21 @@ ESP-IDF `nvs_flash` 儲存於 NVS flash 分割區（0x9000，20 KB）。`ConfigM
 會還原計數；不同日期會先把舊數據留在 RAM，交由 `DailySummaryManager` 聚合，之後由
 `resetDailyCounters()` 清零並以新日期寫入 NVS。沒有既有資料時會建立當日的零值紀錄。
 
+### 命名空間：`cloud_sync`
+
+除 durable event sequence、command ledger 與緊急 overflow 外，歷史補傳使用以下游標：
+
+| NVS Key | 型別 | 說明 |
+|---------|------|------|
+| `hist_active` | u8 | `1` 表示補傳工作尚未完成；重開後自動繼續 |
+| `hist_cursor` | string | service 已確認完成的最後月份（`YYYY-MM`） |
+| `hist_identity` | string | Service origin、device ID 與 token 的 SHA-256；身分變更時游標失效 |
+
+游標只在 service 回覆批次接受天數符合 request 後前進，且只適用於相同 cloud identity。
+每日內容由月檔內同日最大的
+`total`、有效行數與最晚 `ts` 組成；`drink-unsynced.jsonl` 不補傳，當日也延後到隔日
+重新執行時才會納入。
+
 ---
 
 ## Flash 分割表

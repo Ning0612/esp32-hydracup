@@ -4,6 +4,7 @@
 
 #include "AppState.h"
 #include "BuzzerController.h"
+#include "CloudSyncClient.h"
 #include "DiscordNotifier.h"
 #include "EventLogger.h"
 #include "MqttPublisher.h"
@@ -194,12 +195,20 @@ void DrinkDetector::_syncCupState() {
 }
 
 void DrinkDetector::onDrinkConfirmed(float amountMl) {
-    const std::string timestamp = _time ? _time->getISOTimestamp() : "";
+    const std::string timestamp = _time && _time->isSynced() ? _time->getISOTimestamp() : "";
     const std::string period = _time && _time->isSynced() ? _time->getDateString() : "";
     LOG_INFO(TAG, "drink %.0f ml total=%.0f count=%lu", amountMl,
              _events.getTodayTotalMl() + amountMl,
              static_cast<unsigned long>(_events.getDrinkCountToday() + 1));
     _events.onDrinkConfirmed(amountMl, period.c_str(), timestamp.c_str());
+    if (_state && !timestamp.empty()) {
+        std::strncpy(_state->lastDrinkAt, timestamp.c_str(), sizeof(_state->lastDrinkAt) - 1);
+        _state->lastDrinkAt[sizeof(_state->lastDrinkAt) - 1] = '\0';
+    }
+    if (_cloudSync) {
+        _cloudSync->enqueueDrink(timestamp.c_str(), hal_millis(), amountMl,
+                                 _events.getTodayTotalMl(), _events.getDrinkCountToday());
+    }
 }
 
 void DrinkDetector::_startNvsRestore() {
@@ -237,8 +246,13 @@ void DrinkDetector::_finishNvsRestore() {
     _nvsDone = true; _restoreState.store(RestoreState::IDLE);
 }
 
-void DrinkDetector::onRefillDetected(float amountMl) { LOG_INFO(TAG, "refill +%.0f ml", amountMl); _events.onRefillDetected(amountMl); }
-void DrinkDetector::resetReminder() { if (_reminder) _reminder->resetTimer(); }
+void DrinkDetector::onRefillDetected(float amountMl) {
+    LOG_INFO(TAG, "refill +%.0f ml", amountMl);
+    _events.onRefillDetected(amountMl);
+    const std::string timestamp = _time && _time->isSynced() ? _time->getISOTimestamp() : "";
+    if (_cloudSync) _cloudSync->enqueueRefill(timestamp.c_str(), hal_millis(), amountMl);
+}
+void DrinkDetector::resetReminder() { if (_reminder) _reminder->onDrinkConfirmed(); }
 void DrinkDetector::playDrinkBeep() { if (_buzzer) _buzzer->play(BeepPattern::DRINK); }
 void DrinkDetector::notifyDrink(float amountMl, float totalMl, uint32_t count) { if (_discord) _discord->notifyDrink(amountMl, totalMl, count); }
 void DrinkDetector::logDrink(const char* timestamp, float amountMl, float totalMl) {

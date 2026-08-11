@@ -3,11 +3,12 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="darkreader-lock">
 <title>HydraCup / 登入</title>
 <script>
 (function () {
-  var key = 'iot-ui-theme', stored = null;
-  try { stored = localStorage.getItem(key); } catch (e) {}
+  var key = 'hydracup-theme', stored = null;
+  try { stored = localStorage.getItem(key) || localStorage.getItem('iot-ui-theme'); } catch (e) {}
   var theme = (stored === 'light' || stored === 'dark') ? stored :
     (matchMedia('(prefers-color-scheme:dark)').matches ? 'dark' : 'light');
   document.documentElement.dataset.theme = theme;

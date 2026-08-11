@@ -5,7 +5,7 @@
 HydraCup 使用 PlatformIO 的兩個 environment：
 
 - `esp32dev`：ESP32 + native ESP-IDF/FreeRTOS firmware，`framework = espidf`
-- `native`：主機端 C++17 + Unity 測試，執行不依賴硬體的 `DrinkDetectorCore` 測試
+- `native`：主機端 C++17 + Unity 測試，執行不依賴硬體的 `DrinkDetectorCore` 與 `ReminderCore` 測試
 
 目前 PlatformIO environment 設定為 `espressif32@~6.10.0`，由 PlatformIO 管理對應的
 ESP-IDF toolchain。若 Windows 的 `pio` 不在 PATH，可使用目前機器的完整路徑：
@@ -45,6 +45,9 @@ pio run -e esp32dev --target uploadfs --upload-port COM5
 # 開啟 Serial monitor
 pio device monitor -e esp32dev --port COM5 --baud 115200
 ```
+
+`native` environment 明確設定 `test_build_src = no`，只建置測試引用的純 C++ core；不要把
+`src/main.cpp` 或 FreeRTOS／ESP-IDF 硬體模組加入 native test build。
 
 `upload` 與 `uploadfs` 是兩個不同步驟：firmware 不會自動包含 `data/` 靜態資源。
 若 `pio` 不在 PATH，可將上述命令中的 `pio` 替換為 PlatformIO 虛擬環境內的執行檔。

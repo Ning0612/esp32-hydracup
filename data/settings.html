@@ -3,11 +3,12 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="darkreader-lock">
 <title>HydraCup / 設定</title>
 <script>
 (function () {
-  var key = 'iot-ui-theme', stored = null;
-  try { stored = localStorage.getItem(key); } catch (e) {}
+  var key = 'hydracup-theme', stored = null;
+  try { stored = localStorage.getItem(key) || localStorage.getItem('iot-ui-theme'); } catch (e) {}
   var theme = (stored === 'light' || stored === 'dark') ? stored :
     (matchMedia('(prefers-color-scheme:dark)').matches ? 'dark' : 'light');
   document.documentElement.dataset.theme = theme;
@@ -20,7 +21,7 @@
 <header class="topbar"><div class="topbar-in">
   <a class="brand" href="/"><span class="brand-mark">HC</span><span class="brand-copy">HYDRACUP<span class="brand-sub">LOCAL DEVICE / WATER TRACKER</span></span></a>
   <div class="topbar-actions">
-    <nav class="nav" aria-label="主要導覽"><a href="/">儀表板</a><a href="/history">歷史</a><a class="active" aria-current="page" href="/settings">設定</a></nav>
+    <nav class="nav" aria-label="主要導覽"><a href="/">裝置</a><a href="/history">紀錄</a><a class="active" aria-current="page" href="/settings">設定</a></nav>
     <div class="theme-toggle" role="group" aria-label="色彩主題"><button type="button" data-theme-choice="light" aria-pressed="false">LIGHT</button><button type="button" data-theme-choice="dark" aria-pressed="false">DARK</button></div>
     <button class="nav-logout" type="button" data-logout>登出</button>
   </div>
@@ -33,7 +34,7 @@
       <div class="field"><label for="dg">每日目標（ml）</label><input type="number" id="dg" min="100" max="9999"></div>
       <div class="check"><input type="checkbox" id="re"><label for="re">啟用飲水提醒</label></div>
       <div class="field"><label for="ri">提醒間隔（分鐘）</label><input type="number" id="ri" min="1" max="1440"></div>
-      <div class="field"><label for="rat">警報持續時間（秒）</label><input type="number" id="rat" min="5" max="3600"><p class="hint">拿起杯子後會提前停止。</p></div>
+      <div class="field"><label for="rat">警報聲音持續時間（秒）</label><input type="number" id="rat" min="5" max="3600"><p class="hint">拿起杯子或逾時只會停止聲音；有效喝水事件才會重新計時。</p></div>
     </section>
     <section class="card"><h2><span>02</span>蜂鳴器</h2>
       <div class="check"><input type="checkbox" id="be"><label for="be">啟用蜂鳴器</label></div>
@@ -41,6 +42,7 @@
       <div class="field"><label for="bv">音量（%）</label><input type="number" id="bv" min="0" max="100"></div>
       <div class="field"><label for="bd">持續時間（ms）</label><input type="number" id="bd" min="50" max="2000"></div>
     </section>
+    <details class="advanced-settings wide"><summary><span><small>ADVANCED DEVICE SETTINGS</small>網路、感測器與整合</span><i>展開進階設定</i></summary><div class="advanced-settings-grid">
     <section class="card"><h2><span>03</span>進階感測器</h2>
       <p class="section-note">這些設定會影響喝水事件判斷，儲存後需重新啟動才會生效。</p>
       <div class="warn-banner">修改前請先確認目前的杯子與秤台狀態。</div>
@@ -109,7 +111,19 @@
       <option value="50400">UTC+14</option>
     </select></div>
     </section>
-    <section class="card"><h2><span>06</span>MQTT</h2>
+    <section class="card"><h2><span>06</span>Cloud sync</h2>
+      <p class="section-note">連線到獨立的 HydraCup Service。裝置 token 只保存在 NVS，不會顯示於此頁。</p>
+      <div class="check"><input type="checkbox" id="ce"><label for="ce">啟用 HTTPS 同步</label></div>
+      <div class="field"><label for="cu">Service URL</label><input type="url" id="cu" aria-describedby="cloud-url-hint" placeholder="https://hydracup-service.pages.dev"><p class="hint" id="cloud-url-hint">只接受 HTTPS 網站來源，不含路徑、查詢參數或結尾斜線。</p></div>
+      <div class="field"><label for="cd">Device ID</label><input type="text" id="cd" readonly></div>
+      <div class="field"><label for="cth">Device token SHA-256</label><input type="text" id="cth" readonly></div>
+      <div class="cloud-history-backfill">
+        <div><strong>裝置歷史補傳</strong><p>把 LittleFS 中已結束日期的飲水摘要補到 LIFF；重試不會重複累加，今日資料仍由即時同步處理。</p></div>
+        <button class="btn btn-secondary" id="history-backfill-btn" type="button" onclick="startHistoryBackfill()">開始補傳</button>
+        <output id="history-backfill-status" aria-live="polite">讀取狀態中…</output>
+      </div>
+    </section>
+    <section class="card"><h2><span>07</span>MQTT（選用 telemetry）</h2>
       <p class="section-note">選填；變更後需重新啟動。</p>
       <div class="check"><input type="checkbox" id="me"><label for="me">啟用 MQTT 發佈</label></div>
       <div class="field"><label for="mh">Broker 位址</label><input type="text" id="mh" placeholder="192.168.1.50 或 epaper-display.local"></div>
@@ -119,11 +133,12 @@
       <div class="field"><label for="mc">Client ID</label><input type="text" id="mc" placeholder="hydracup-device"></div>
       <div class="field"><label for="mhb">心跳間隔（秒）</label><input type="number" id="mhb" min="5" max="3600"></div>
     </section>
+    </div></details>
     <div class="wide actions"><button class="btn btn-primary" type="button" onclick="save()">儲存設定</button><button class="btn btn-danger" type="button" onclick="if(confirm('確定要重新啟動 HydraCup？')) reboot()">重新啟動裝置</button></div>
   </form>
 
   <hr class="divider">
-  <section id="calibration" class="card"><h2><span>07</span>秤重校正</h2>
+  <section id="calibration" class="card"><h2><span>08</span>秤重校正</h2>
     <p class="section-note">先移除所有重物歸零，再放上已知重量完成校正。</p>
     <div class="split-grid"><div><div class="label">目前校正因子</div><div class="factor-badge" id="cur-factor">--</div></div><div><div class="label">即時重量</div><div class="weight-display-lg" id="cal-weight">-- g</div></div></div>
     <div class="section-title">步驟 1 / 歸零</div><div class="actions"><button class="btn btn-secondary" type="button" onclick="doTare()">執行歸零</button></div><div class="msg" id="tare-msg"></div>
@@ -140,6 +155,7 @@
 <script src="/ui.js"></script>
 <script>
 let wtTimer = null;
+let historyTimer = null;
 
 function showMsg(id, text, ok) {
   const el = document.getElementById(id);
@@ -173,6 +189,10 @@ function load() {
     document.getElementById('sdm').value  = d.stableDurationMs || 3000;
     document.getElementById('mnd').value  = d.minDrinkDeltaMl != null ? d.minDrinkDeltaMl : 20;
     document.getElementById('mxd').value  = d.maxDrinkDeltaMl != null ? d.maxDrinkDeltaMl : 500;
+    document.getElementById('ce').checked = !!d.cloudEnabled;
+    document.getElementById('cu').value   = d.cloudBaseUrl || '';
+    document.getElementById('cd').value   = d.cloudDeviceId || '';
+    document.getElementById('cth').value  = d.cloudDeviceTokenHash || '';
     document.getElementById('me').checked = !!d.mqttEnabled;
     document.getElementById('mh').value   = d.mqttBrokerHost || '';
     document.getElementById('mp').value   = d.mqttBrokerPort || 1883;
@@ -246,6 +266,15 @@ function save() {
   const wp = document.getElementById('wp').value;
   const wh = document.getElementById('wh').value;
   const mpw = document.getElementById('mpw').value;
+  const cloudInput = document.getElementById('cu');
+  const cloudEnabled = document.getElementById('ce').checked;
+  const cloudUrl = normaliseCloudOrigin(cloudInput.value);
+  if ((cloudInput.value.trim() && cloudUrl === null) || (cloudEnabled && !cloudUrl)) {
+    showMsg('msg', 'Service URL 必須是有效的 HTTPS 網站來源，例如 https://hydracup-service.pages.dev', false);
+    cloudInput.focus();
+    return;
+  }
+  cloudInput.value = cloudUrl || '';
   const body = {
     dailyGoalMl:             parseInt(document.getElementById('dg').value)    || 2000,
     reminderIntervalMin:     parseInt(document.getElementById('ri').value)    || 60,
@@ -265,6 +294,8 @@ function save() {
     stableDurationMs:        parseInt(document.getElementById('sdm').value)   || 3000,
     minDrinkDeltaMl:         parseFloat(document.getElementById('mnd').value) || 20,
     maxDrinkDeltaMl:         parseFloat(document.getElementById('mxd').value) || 500,
+    cloudEnabled:            cloudEnabled,
+    cloudBaseUrl:            cloudUrl || '',
     mqttEnabled:             document.getElementById('me').checked,
     mqttBrokerHost:          document.getElementById('mh').value,
     mqttBrokerPort:          parseInt(document.getElementById('mp').value)  || 1883,
@@ -285,6 +316,55 @@ function save() {
       j.ok ? (j.reboot_required ? '儲存成功。部分設定需重新啟動後生效。' : '儲存成功！') :
               '錯誤：' + (j.error || '未知'), j.ok);
   }).catch(() => showMsg('msg', '連線失敗', false));
+}
+
+function normaliseCloudOrigin(value) {
+  const trimmed = String(value || '').trim();
+  if (!trimmed) return '';
+  try {
+    const url = new URL(trimmed);
+    if (url.protocol !== 'https:' || url.username || url.password || url.search || url.hash || (url.pathname && url.pathname !== '/')) return null;
+    return url.origin;
+  } catch (_) { return null; }
+}
+
+function renderHistoryBackfill(d) {
+  const button = document.getElementById('history-backfill-btn');
+  const output = document.getElementById('history-backfill-status');
+  const running = !!d.cloud_history_backfill_running;
+  const uploaded = Math.max(0, Number(d.cloud_history_backfill_uploaded_days) || 0);
+  const status = d.cloud_history_backfill_state || 'idle';
+  const http = Number(d.cloud_history_backfill_http_status) || 0;
+  button.disabled = running || !d.cloud_configured;
+  button.textContent = running ? '補傳進行中…' : (status === 'complete' ? '重新補傳' : '開始補傳');
+  if (!d.cloud_configured) output.textContent = '請先啟用並儲存 Cloud sync。';
+  else if (status === 'queued') output.textContent = '已排入背景工作 · 已確認 ' + uploaded + ' 天';
+  else if (status === 'uploading') output.textContent = '正在上傳 · 已確認 ' + uploaded + ' 天';
+  else if (status === 'retrying') output.textContent = '暫時失敗，裝置會自動重試 · 已確認 ' + uploaded + ' 天 · HTTP ' + (http || '--');
+  else if (status === 'complete') output.textContent = '補傳完成 · 已確認 ' + uploaded + ' 天';
+  else output.textContent = '尚未執行；只補傳今天以前的日期。';
+}
+
+function refreshHistoryBackfill() {
+  return hydraFetch('/api/status').then(r => r.json()).then(d => {
+    if (d.ok) renderHistoryBackfill(d);
+  }).catch(() => {});
+}
+
+function startHistoryBackfill() {
+  const button = document.getElementById('history-backfill-btn');
+  const output = document.getElementById('history-backfill-status');
+  button.disabled = true;
+  output.textContent = '正在建立背景補傳工作…';
+  hydraFetch('/api/cloud/history-backfill', { method: 'POST' }).then(async response => {
+    const body = await response.json();
+    if (!response.ok || !body.ok) throw new Error(body.error || ('HTTP ' + response.status));
+    output.textContent = '已排入背景工作，離開此頁也會繼續。';
+    return refreshHistoryBackfill();
+  }).catch(error => {
+    button.disabled = false;
+    output.textContent = '無法開始補傳：' + error.message;
+  });
 }
 
 function reboot() {
@@ -333,8 +413,10 @@ function doCalibrate() {
 
 // Poll weight while settings page is open
 wtTimer = setInterval(fetchWeight, 1000);
+historyTimer = setInterval(refreshHistoryBackfill, 3000);
 fetchWeight();
-window.addEventListener('beforeunload', () => clearInterval(wtTimer));
+refreshHistoryBackfill();
+window.addEventListener('beforeunload', () => { clearInterval(wtTimer); clearInterval(historyTimer); });
 
 // Jump to calibration if URL has #calibration
 if (location.hash === '#calibration')

@@ -3,11 +3,11 @@
 [![PlatformIO](https://img.shields.io/badge/PlatformIO-espressif32%406.10-orange?logo=platformio)](https://platformio.org)
 [![ESP32](https://img.shields.io/badge/Board-ESP32-red?logo=espressif)](https://www.espressif.com/en/products/socs/esp32)
 [![ESP-IDF](https://img.shields.io/badge/Framework-ESP--IDF-blue?logo=espressif)](https://docs.espressif.com/projects/esp-idf/en/latest/esp32/)
-[![Version](https://img.shields.io/badge/Version-0.4.0-brightgreen)](include/version.h)
+[![Version](https://img.shields.io/badge/Version-0.5.0-brightgreen)](include/version.h)
 [![CI](https://github.com/Ning0612/esp32-hydracup/actions/workflows/ci.yml/badge.svg)](https://github.com/Ning0612/esp32-hydracup/actions/workflows/ci.yml)
 [![License](https://img.shields.io/badge/License-MIT-yellow)](LICENSE)
 
-ESP32-based smart water cup tracker. Measures cup weight via HX711, detects drink events, sends Discord Webhook notifications, and provides a local web dashboard.
+ESP32-based smart water cup tracker. Measures cup weight via HX711, detects drink events, provides a local Device Console, and can sync with a separate LINE/LIFF service.
 
 The firmware runs on native ESP-IDF/FreeRTOS through PlatformIO. Hardware access uses
 ESP-IDF drivers; the web server, MQTT, Discord HTTPS client, NVS, and LittleFS are
@@ -48,7 +48,7 @@ Full demo video:
 
 WebUI screenshots:
 
-The local dashboard is served by the ESP32 at `http://<device-ip>`. The screenshots below cover the live dashboard, history analytics, and device configuration workflows.
+The local dashboard is served by the ESP32 at `http://<device-ip>`. The current Console uses the same cup-and-ripple visual language as the hosted LIFF UI, supports light and dark themes, and changes to a fixed three-item dock on small screens. It keeps live hardware diagnostics dense while the hosted UI remains focused on daily hydration. The screenshots below cover the dashboard, history analytics, and device configuration workflows; minor styling may evolve between releases.
 
 <div align="center">
   <table align="center">
@@ -86,14 +86,17 @@ The local dashboard is served by the ESP32 at `http://<device-ip>`. The screensh
 ## Features
 
 - **Automatic drink detection** — 6-state machine triggered only via cup-lift path, avoids false positives
-- **Web dashboard** — real-time weight, daily progress, and drink history at `http://<device-ip>`
+- **Responsive Device Console** — cup/reminder state, real-time weight, progress, history, diagnostics, and progressively disclosed device settings at `http://<device-ip>`
 - **Discord Webhook** — online notification, per-drink notification, daily summary at midnight
 - **JSONL event log** — monthly log files stored on a dedicated LittleFS partition (`/logs/`)
 - **OLED display** — 2-page rotating status display with auto-sleep
-- **Configurable reminders** — interval-based buzzer reminder when no drink detected
+- **Cup-aware reminders** — counts only while a stable cup is present; a confirmed drink restarts the interval
+- **Durable cloud sync** — LittleFS outbox with ACK-based replay plus resumable daily-history backfill for the separate LINE/LIFF WebUI service
 - **Captive config portal** — WiFi setup at `192.168.4.1` on first boot (no app needed)
-- **FreeRTOS control isolation** — scale/detection/reminder/display run in one high-priority control task; Web, MQTT and Discord cannot stall sampling
+- **FreeRTOS control isolation** — scale/detection/reminder/display run in one high-priority control task; network operations stay in background workers
 - **Non-blocking tare and workers** — tare is sample-driven; Discord, MQTT and drink logging use persistent/background workers
+
+Cloud events are durably committed before the confirmed drink/refill callback returns. A transient LittleFS append failure falls back to an 8-record NVS emergency overflow. This adds bounded flash latency after a confirmed event; if both the 512 KiB outbox and emergency overflow are unavailable, Device Console reports a hard-drop counter. Measure worst-case LittleFS/NVS latency on the target board before production use.
 
 ---
 
@@ -151,7 +154,7 @@ See [docs/guides/getting-started.md](docs/guides/getting-started.md) for the com
 │                                                       │
 │  hydracup_service (50 ms) → WiFi / MQTT / health      │
 │  esp_http_server task → Dashboard / REST API           │
-│  workers → Discord / MQTT / Log / counter NVS         │
+│  workers → Cloud sync / Discord / MQTT / Log / NVS    │
 └───────────────────────────────────────────────────────┘
 
 ┌────── AP Mode (no WiFi configured) ──────────────────┐
@@ -172,6 +175,7 @@ See [docs/guides/getting-started.md](docs/guides/getting-started.md) for the com
 | POST | `/api/tare` | Tare scale |
 | POST | `/api/calibrate` | Calibrate with known weight |
 | GET | `/api/logs?month=YYYY-MM` | Drink history |
+| POST | `/api/cloud/history-backfill` | Start resumable Local-history backfill |
 | GET | `/api/wifi/scan` | Scan nearby networks |
 | POST | `/api/reboot` | Reboot device |
 
@@ -194,6 +198,12 @@ Full API reference: [docs/api.md](docs/api.md)
 | [docs/guides/calibration.md](docs/guides/calibration.md) | Scale calibration |
 | [docs/guides/configuration.md](docs/guides/configuration.md) | All settings explained |
 | [docs/guides/discord-setup.md](docs/guides/discord-setup.md) | Discord Webhook setup |
+| [docs/releases/v0.5.0.md](docs/releases/v0.5.0.md) | Cup-aware reminders, unified WebUI, LINE/LIFF sync, and history backfill |
+
+The companion Cloudflare/LINE service is maintained in the private
+[`hydracup-service`](https://github.com/Ning0612/hydracup-service) repository. Firmware `v0.5.0`
+and service protocol v1 form the current tested pair; see the service user guide for pairing and
+hosted LIFF operation.
 
 ## License
 

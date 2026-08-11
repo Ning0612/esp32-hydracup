@@ -8,6 +8,10 @@ Normal Mode 使用伺服器端單一 session slot：新登入會取代舊 sessio
 24 小時自動失效；裝置重開機也會讓 session 失效。管理介面目前以 HTTP 提供，因此請將它
 限制在信任的隔離 LAN，避免同網段攻擊者攔截並重放 token。
 
+設定頁第一層只顯示日常會調整的「飲水與提醒」及「蜂鳴器」。感測器、WiFi、NTP、Cloud
+sync 與 MQTT 收在「網路、感測器與整合」進階區；秤重校正仍是獨立區塊，避免誤把校正操作
+當成一般設定。
+
 ---
 
 ## 飲水偵測
@@ -99,6 +103,57 @@ Discord 通知類型：
 - **每日摘要**：午夜 00:00 發送，含當日總量與達成率
 
 設定步驟見 [discord-setup.md](discord-setup.md)。
+
+---
+
+## Cloud sync
+
+Cloud sync 將 ESP32 已確認的飲水／補水事件透過 HTTPS durable outbox 同步至獨立的
+HydraCup Service。ESP32 仍是飲水事件與提醒狀態的唯一真實來源，雲端 WebUI 不提供
+手動新增飲水量。目前 service protocol v1 的驗證組合需要 HydraCup firmware `v0.5.0`
+以上；若任一端修改 schema、history backfill 或 command／ACK 語意，必須同步升級兩個 repo。
+
+| 設定 | API 欄位 | 說明 |
+|------|---------|------|
+| 啟用 HTTPS 同步 | `cloudEnabled` | 開啟裝置背景同步；變更後需重新啟動 |
+| Service URL | `cloudBaseUrl` | 只填 HTTPS origin，例如 `https://hydracup-service.pages.dev` |
+| Device ID | `cloudDeviceId` | 首次啟動由裝置依 MAC 產生；WebUI 唯讀顯示 |
+| Device token SHA-256 | `cloudDeviceTokenHash` | 供 Cloudflare allowlist 使用；不是 raw token，WebUI 唯讀顯示 |
+
+Service v1 的日期邊界固定為 Asia/Taipei，因此啟用 Cloud sync 時裝置時區必須是 `UTC+8`；
+其他時區會被設定 API 拒絕，既有非 UTC+8 設定也不會開始同步。這可確保即時事件、Local
+月檔與 LIFF 熱力圖使用同一天界。
+
+WebUI 與 `POST /api/config` 都會移除 Service URL 前後空白與結尾斜線，並只接受純 HTTPS
+origin。不可附加 `/api/v1/device/sync`、其他 path、query、fragment 或帳密；不合法值會在
+套用其他設定前回傳 `400`。背景 worker 每 15 秒同步一次；新事件或 command ACK 會要求
+提早同步。登入後的裝置首頁「03 裝置狀態」會顯示：
+
+- `正常 · 待送 0`／HTTP `200`：最近一次同步成功，durable outbox 已送完。
+- `待送 N`：尚有事件等待 server ACK；短暫離線時屬正常現象。
+- HTTP `401`：Device ID 或 token hash 與部署環境 allowlist 不一致。
+- HTTP `--`：尚未送出，或 HTTPS 在取得 HTTP status 前失敗；先檢查 URL 空白、DNS、網路與 TLS 時間。
+- `儲存失敗 N 筆`：LittleFS outbox 與 NVS emergency overflow 都無法保存事件，需立即排查儲存空間。
+
+裝置未綁定時，第一次成功同步會在同區顯示 8 碼、10 分鐘有效的「WebUI 配對碼」。
+配對完成後 server 回傳 `deviceBound=true`，裝置會清除顯示中的配對碼。完整 LINE／LIFF
+使用流程見
+[HydraCup Service 使用指南](https://github.com/Ning0612/hydracup-service/blob/main/docs/user-guide.md)。
+
+Raw device token 只存在 ESP32 NVS，不會顯示在 WebUI，也不應放入 Cloudflare、repo、文件
+或訊息。Device Console 目前使用 LAN HTTP，請只在信任的隔離網路操作。
+
+### 補傳 Local 歷史到 LIFF
+
+Cloud sync 已正常連線後，在設定頁「06 Cloud sync」按「開始補傳」。背景 worker 每批處理
+一個月份，把 LittleFS 中今天以前的每日摘要送往 `/api/v1/device/history-backfill`；原始
+token 不會交給瀏覽器。service 確認後才持久化 `hist_cursor`，所以離線、5xx 或重開機後會
+重送相同月份，不會跳過資料，也不會重複累加。完成後可再次執行，補上前次執行時仍屬今日
+的資料。游標會綁定 Service origin 與裝置身分；身分變更後從頭安全重送。月檔以短批次
+持有 filesystem lock、在鎖外解析，避免阻塞新的飲水日誌。
+
+狀態為 `retrying` 時裝置每 15 秒自動重試。HTTP 400 通常表示 firmware 與 service 協定
+版本不一致；401 是裝置身分不符；410 是雲端帳號刪除後的停用 tombstone。
 
 ---
 
