@@ -110,7 +110,8 @@ Discord 通知類型：
 
 Cloud sync 將 ESP32 已確認的飲水／補水事件透過 HTTPS durable outbox 同步至獨立的
 HydraCup Service。ESP32 仍是飲水事件與提醒狀態的唯一真實來源，雲端 WebUI 不提供
-手動新增飲水量。
+手動新增飲水量。目前 service protocol v1 的驗證組合需要 HydraCup firmware `v0.5.0`
+以上；若任一端修改 schema、history backfill 或 command／ACK 語意，必須同步升級兩個 repo。
 
 | 設定 | API 欄位 | 說明 |
 |------|---------|------|

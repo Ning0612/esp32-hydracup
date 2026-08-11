@@ -84,7 +84,7 @@ pio run -e esp32dev -v -t uploadfs | Select-String address
 
 ## 步驟 6：連接 LINE／LIFF 雲端服務（選用）
 
-這個步驟需要已部署的獨立 `hydracup-service`、已設定的裝置 allowlist，以及可用的
+這個步驟需要 HydraCup firmware `v0.5.0` 以上、已部署的獨立 `hydracup-service`、已設定的裝置 allowlist，以及可用的
 LINE Login／Messaging API channel。完整的使用與配對流程見
 [HydraCup Service 使用指南](https://github.com/Ning0612/hydracup-service/blob/main/docs/user-guide.md)。
 
@@ -116,6 +116,10 @@ raw device token 或 Device token SHA-256。
 但 150% 以上不再增加動畫強度。有效飲水事件會短暫顯示落水、漣漪與本次增加的 ml；
 點擊或用鍵盤啟用水杯只會播放晃水動畫並顯示進度摘要，不會新增或修改飲水紀錄。
 作業系統啟用「減少動態效果」時，頁面會保留靜態狀態而停用主要動畫。
+
+Local History 與 LIFF「趨勢」的年度熱力圖都預設顯示最近 365 天，並可用左右箭頭切換
+指定完整年份；平年為 365 格、閏年為 366 格。Local 直接讀取裝置 LittleFS 月檔，LIFF
+只顯示已同步的雲端事件與完成歷史補傳的每日摘要，因此兩邊在補傳完成前可能暫時不同。
 
 ---
 

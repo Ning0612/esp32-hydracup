@@ -91,7 +91,7 @@ The local dashboard is served by the ESP32 at `http://<device-ip>`. The current 
 - **JSONL event log** — monthly log files stored on a dedicated LittleFS partition (`/logs/`)
 - **OLED display** — 2-page rotating status display with auto-sleep
 - **Cup-aware reminders** — counts only while a stable cup is present; a confirmed drink restarts the interval
-- **Durable cloud sync** — LittleFS outbox with ACK-based replay for the separate LINE/LIFF WebUI service
+- **Durable cloud sync** — LittleFS outbox with ACK-based replay plus resumable daily-history backfill for the separate LINE/LIFF WebUI service
 - **Captive config portal** — WiFi setup at `192.168.4.1` on first boot (no app needed)
 - **FreeRTOS control isolation** — scale/detection/reminder/display run in one high-priority control task; network operations stay in background workers
 - **Non-blocking tare and workers** — tare is sample-driven; Discord, MQTT and drink logging use persistent/background workers
@@ -154,7 +154,7 @@ See [docs/guides/getting-started.md](docs/guides/getting-started.md) for the com
 │                                                       │
 │  hydracup_service (50 ms) → WiFi / MQTT / health      │
 │  esp_http_server task → Dashboard / REST API           │
-│  workers → Discord / MQTT / Log / counter NVS         │
+│  workers → Cloud sync / Discord / MQTT / Log / NVS    │
 └───────────────────────────────────────────────────────┘
 
 ┌────── AP Mode (no WiFi configured) ──────────────────┐
@@ -175,6 +175,7 @@ See [docs/guides/getting-started.md](docs/guides/getting-started.md) for the com
 | POST | `/api/tare` | Tare scale |
 | POST | `/api/calibrate` | Calibrate with known weight |
 | GET | `/api/logs?month=YYYY-MM` | Drink history |
+| POST | `/api/cloud/history-backfill` | Start resumable Local-history backfill |
 | GET | `/api/wifi/scan` | Scan nearby networks |
 | POST | `/api/reboot` | Reboot device |
 
@@ -197,6 +198,12 @@ Full API reference: [docs/api.md](docs/api.md)
 | [docs/guides/calibration.md](docs/guides/calibration.md) | Scale calibration |
 | [docs/guides/configuration.md](docs/guides/configuration.md) | All settings explained |
 | [docs/guides/discord-setup.md](docs/guides/discord-setup.md) | Discord Webhook setup |
+| [docs/releases/v0.5.0.md](docs/releases/v0.5.0.md) | Cup-aware reminders, unified WebUI, LINE/LIFF sync, and history backfill |
+
+The companion Cloudflare/LINE service is maintained in the private
+[`hydracup-service`](https://github.com/Ning0612/hydracup-service) repository. Firmware `v0.5.0`
+and service protocol v1 form the current tested pair; see the service user guide for pairing and
+hosted LIFF operation.
 
 ## License
 
