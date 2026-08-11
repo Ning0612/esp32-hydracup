@@ -1,6 +1,7 @@
 #include "DashboardServer.h"
 
 #include <algorithm>
+#include <cctype>
 #include <cstdio>
 #include <cstring>
 #include <cstdlib>
@@ -44,6 +45,43 @@ bool boolean(cJSON* object, const char* key) { cJSON* value = cJSON_GetObjectIte
 std::string stringValue(cJSON* object, const char* key) {
     cJSON* value = cJSON_GetObjectItemCaseSensitive(object, key);
     return value && cJSON_IsString(value) && value->valuestring ? value->valuestring : "";
+}
+
+bool normalizeCloudOrigin(const std::string& input, std::string& output) {
+    const auto isSpace = [](unsigned char value) { return std::isspace(value) != 0; };
+    auto first = std::find_if_not(input.begin(), input.end(), isSpace);
+    auto last = std::find_if_not(input.rbegin(), input.rend(), isSpace).base();
+    output = first < last ? std::string(first, last) : "";
+    while (!output.empty() && output.back() == '/') output.pop_back();
+    if (output.empty()) return true;
+    if (output.size() >= 192) return false;
+    constexpr size_t schemeLength = 8;
+    if (output.rfind("https://", 0) != 0 || output.size() == schemeLength) return false;
+    const std::string authority = output.substr(schemeLength);
+    if (authority.find_first_of("/?#@") != std::string::npos ||
+        std::any_of(authority.begin(), authority.end(), isSpace)) return false;
+    const size_t colon = authority.rfind(':');
+    if (colon != std::string::npos) {
+        if (authority.find(':') != colon || colon == 0 || colon + 1 == authority.size()) return false;
+        const std::string portText = authority.substr(colon + 1);
+        if (!std::all_of(portText.begin(), portText.end(), [](unsigned char value) { return std::isdigit(value) != 0; })) return false;
+        const unsigned long port = std::strtoul(portText.c_str(), nullptr, 10);
+        if (port == 0 || port > 65535) return false;
+    }
+    const std::string host = authority.substr(0, colon);
+    if (host.empty() || host.front() == '.' || host.back() == '.') return false;
+    bool labelStart = true;
+    bool previousHyphen = false;
+    for (unsigned char value : host) {
+        if (value == '.') {
+            if (labelStart || previousHyphen) return false;
+            labelStart = true; previousHyphen = false; continue;
+        }
+        if (!(std::isalnum(value) || value == '-')) return false;
+        if (labelStart && value == '-') return false;
+        labelStart = false; previousHyphen = value == '-';
+    }
+    return !labelStart && !previousHyphen;
 }
 }
 
@@ -232,6 +270,19 @@ esp_err_t DashboardServer::_handlePost(httpd_req_t* request) {
     if (uri == "/api/config") {
         if (!_requireApiAuth(request, true)) return ESP_OK;
         doc = parseBody(request, body); if (!doc) { _sendJson(request, "{\"ok\":false,\"error\":\"Invalid JSON\"}", 400); return ESP_OK; }
+        std::string normalizedCloudOrigin;
+        if (has(doc, "cloudBaseUrl") &&
+            (!cJSON_IsString(cJSON_GetObjectItem(doc, "cloudBaseUrl")) ||
+             !normalizeCloudOrigin(stringValue(doc, "cloudBaseUrl"), normalizedCloudOrigin))) {
+            cJSON_Delete(doc); _sendJson(request, "{\"ok\":false,\"error\":\"cloudBaseUrl must be an HTTPS origin\"}", 400); return ESP_OK;
+        }
+        const bool cloudWillBeEnabled = boolean(doc, "cloudEnabled")
+            ? cJSON_IsTrue(cJSON_GetObjectItem(doc, "cloudEnabled")) : _cfg->cloudEnabled;
+        const std::string cloudOriginAfterUpdate = has(doc, "cloudBaseUrl")
+            ? normalizedCloudOrigin : _cfg->cloudBaseUrl;
+        if (cloudWillBeEnabled && cloudOriginAfterUpdate.empty()) {
+            cJSON_Delete(doc); _sendJson(request, "{\"ok\":false,\"error\":\"cloudBaseUrl is required when cloud sync is enabled\"}", 400); return ESP_OK;
+        }
         const RuntimeSnapshot live = _runtime ? _runtime->snapshot() : RuntimeSnapshot{};
         if (_runtime && _runtime->isControlRunning()) {
             _cfg->reminderEnabled = live.reminderEnabled;
@@ -253,12 +304,13 @@ esp_err_t DashboardServer::_handlePost(httpd_req_t* request) {
         if (has(doc, "wifiPassword") && cJSON_IsString(cJSON_GetObjectItem(doc, "wifiPassword")) && stringValue(doc, "wifiPassword") != "****") { _cfg->wifiPassword = stringValue(doc, "wifiPassword"); reboot = true; }
         if (has(doc, "discordWebhookUrl") && cJSON_IsString(cJSON_GetObjectItem(doc, "discordWebhookUrl")) && stringValue(doc, "discordWebhookUrl").find("****") == std::string::npos) _cfg->discordWebhookUrl = stringValue(doc, "discordWebhookUrl");
         if (boolean(doc, "cloudEnabled")) { _cfg->cloudEnabled = cJSON_IsTrue(cJSON_GetObjectItem(doc, "cloudEnabled")); reboot = true; }
-        if (has(doc, "cloudBaseUrl")) { const std::string value = stringValue(doc, "cloudBaseUrl"); if (value.empty() || value.rfind("https://", 0) == 0) { _cfg->cloudBaseUrl = value; reboot = true; } }
+        if (has(doc, "cloudBaseUrl")) { _cfg->cloudBaseUrl = normalizedCloudOrigin; reboot = true; }
         if (boolean(doc, "ntpEnabled")) { _cfg->ntpEnabled = cJSON_IsTrue(cJSON_GetObjectItem(doc, "ntpEnabled")); reboot = true; }
         if (has(doc, "ntpServer1")) { _cfg->ntpServer1 = stringValue(doc, "ntpServer1"); reboot = true; } if (has(doc, "ntpServer2")) { _cfg->ntpServer2 = stringValue(doc, "ntpServer2"); reboot = true; }
         applyNumber("timezoneOffsetSec", _cfg->timezoneOffsetSec, -43200, 50400, true); applyNumber("cupPresentThresholdGram", _cfg->cupPresentThresholdGram, 10, 500, true); applyNumber("stableToleranceGram", _cfg->stableToleranceGram, .5, 20, true); applyNumber("stableDurationMs", _cfg->stableDurationMs, 500, 10000, true); applyNumber("minDrinkDeltaMl", _cfg->minDrinkDeltaMl, 5, 100, true); applyNumber("maxDrinkDeltaMl", _cfg->maxDrinkDeltaMl, 50, 1000, true);
         if (boolean(doc, "mqttEnabled")) { _cfg->mqttEnabled = cJSON_IsTrue(cJSON_GetObjectItem(doc, "mqttEnabled")); reboot = true; } if (has(doc, "mqttBrokerHost")) { _cfg->mqttBrokerHost = stringValue(doc, "mqttBrokerHost"); reboot = true; } if (number(doc, "mqttBrokerPort")) { _cfg->mqttBrokerPort = static_cast<uint16_t>(std::clamp(cJSON_GetObjectItem(doc, "mqttBrokerPort")->valuedouble, 1.0, 65535.0)); reboot = true; } if (has(doc, "mqttUsername")) { _cfg->mqttUsername = stringValue(doc, "mqttUsername"); reboot = true; } if (has(doc, "mqttPassword") && stringValue(doc, "mqttPassword") != "****") { _cfg->mqttPassword = stringValue(doc, "mqttPassword"); reboot = true; } if (has(doc, "mqttClientId")) { _cfg->mqttClientId = stringValue(doc, "mqttClientId"); if (_cfg->mqttClientId.empty()) _cfg->mqttClientId = DEFAULT_MQTT_CLIENT_ID; reboot = true; } if (number(doc, "mqttHeartbeatSec")) { _cfg->mqttHeartbeatSec = static_cast<uint16_t>(std::clamp(cJSON_GetObjectItem(doc, "mqttHeartbeatSec")->valuedouble, 5.0, 3600.0)); reboot = true; }
-        _cfgMgr->save(*_cfg); if (_discord) _discord->configure(*_cfg); if (_cloudSync) _cloudSync->configure(*_cfg); if (!applied) reboot = true;
+        if (!_cfgMgr->save(*_cfg)) { cJSON_Delete(doc); _sendJson(request, "{\"ok\":false,\"error\":\"config_applied_but_persist_failed\"}", 500); return ESP_OK; }
+        if (_discord) _discord->configure(*_cfg); if (_cloudSync) _cloudSync->configure(*_cfg); if (!applied) reboot = true;
         cJSON_Delete(doc); cJSON* response = cJSON_CreateObject(); cJSON_AddBoolToObject(response, "ok", true); cJSON_AddBoolToObject(response, "reboot_required", reboot); cJSON_AddBoolToObject(response, "control_applied", applied); _sendJson(request, jsonString(response)); cJSON_Delete(response); return ESP_OK;
     }
     http_send(request, "text/plain", "Not found", 404); return ESP_OK;

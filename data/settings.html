@@ -3,11 +3,12 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="darkreader-lock">
 <title>HydraCup / 設定</title>
 <script>
 (function () {
-  var key = 'iot-ui-theme', stored = null;
-  try { stored = localStorage.getItem(key); } catch (e) {}
+  var key = 'hydracup-theme', stored = null;
+  try { stored = localStorage.getItem(key) || localStorage.getItem('iot-ui-theme'); } catch (e) {}
   var theme = (stored === 'light' || stored === 'dark') ? stored :
     (matchMedia('(prefers-color-scheme:dark)').matches ? 'dark' : 'light');
   document.documentElement.dataset.theme = theme;
@@ -20,7 +21,7 @@
 <header class="topbar"><div class="topbar-in">
   <a class="brand" href="/"><span class="brand-mark">HC</span><span class="brand-copy">HYDRACUP<span class="brand-sub">LOCAL DEVICE / WATER TRACKER</span></span></a>
   <div class="topbar-actions">
-    <nav class="nav" aria-label="主要導覽"><a href="/">儀表板</a><a href="/history">歷史</a><a class="active" aria-current="page" href="/settings">設定</a></nav>
+    <nav class="nav" aria-label="主要導覽"><a href="/">裝置</a><a href="/history">紀錄</a><a class="active" aria-current="page" href="/settings">設定</a></nav>
     <div class="theme-toggle" role="group" aria-label="色彩主題"><button type="button" data-theme-choice="light" aria-pressed="false">LIGHT</button><button type="button" data-theme-choice="dark" aria-pressed="false">DARK</button></div>
     <button class="nav-logout" type="button" data-logout>登出</button>
   </div>
@@ -41,6 +42,7 @@
       <div class="field"><label for="bv">音量（%）</label><input type="number" id="bv" min="0" max="100"></div>
       <div class="field"><label for="bd">持續時間（ms）</label><input type="number" id="bd" min="50" max="2000"></div>
     </section>
+    <details class="advanced-settings wide"><summary><span><small>ADVANCED DEVICE SETTINGS</small>網路、感測器與整合</span><i>展開進階設定</i></summary><div class="advanced-settings-grid">
     <section class="card"><h2><span>03</span>進階感測器</h2>
       <p class="section-note">這些設定會影響喝水事件判斷，儲存後需重新啟動才會生效。</p>
       <div class="warn-banner">修改前請先確認目前的杯子與秤台狀態。</div>
@@ -112,7 +114,7 @@
     <section class="card"><h2><span>06</span>Cloud sync</h2>
       <p class="section-note">連線到獨立的 HydraCup Service。裝置 token 只保存在 NVS，不會顯示於此頁。</p>
       <div class="check"><input type="checkbox" id="ce"><label for="ce">啟用 HTTPS 同步</label></div>
-      <div class="field"><label for="cu">Service URL</label><input type="url" id="cu" placeholder="https://hydracup-service.pages.dev"></div>
+      <div class="field"><label for="cu">Service URL</label><input type="url" id="cu" aria-describedby="cloud-url-hint" placeholder="https://hydracup-service.pages.dev"><p class="hint" id="cloud-url-hint">只接受 HTTPS 網站來源，不含路徑、查詢參數或結尾斜線。</p></div>
       <div class="field"><label for="cd">Device ID</label><input type="text" id="cd" readonly></div>
       <div class="field"><label for="cth">Device token SHA-256</label><input type="text" id="cth" readonly></div>
     </section>
@@ -126,6 +128,7 @@
       <div class="field"><label for="mc">Client ID</label><input type="text" id="mc" placeholder="hydracup-device"></div>
       <div class="field"><label for="mhb">心跳間隔（秒）</label><input type="number" id="mhb" min="5" max="3600"></div>
     </section>
+    </div></details>
     <div class="wide actions"><button class="btn btn-primary" type="button" onclick="save()">儲存設定</button><button class="btn btn-danger" type="button" onclick="if(confirm('確定要重新啟動 HydraCup？')) reboot()">重新啟動裝置</button></div>
   </form>
 
@@ -257,6 +260,15 @@ function save() {
   const wp = document.getElementById('wp').value;
   const wh = document.getElementById('wh').value;
   const mpw = document.getElementById('mpw').value;
+  const cloudInput = document.getElementById('cu');
+  const cloudEnabled = document.getElementById('ce').checked;
+  const cloudUrl = normaliseCloudOrigin(cloudInput.value);
+  if ((cloudInput.value.trim() && cloudUrl === null) || (cloudEnabled && !cloudUrl)) {
+    showMsg('msg', 'Service URL 必須是有效的 HTTPS 網站來源，例如 https://hydracup-service.pages.dev', false);
+    cloudInput.focus();
+    return;
+  }
+  cloudInput.value = cloudUrl || '';
   const body = {
     dailyGoalMl:             parseInt(document.getElementById('dg').value)    || 2000,
     reminderIntervalMin:     parseInt(document.getElementById('ri').value)    || 60,
@@ -276,8 +288,8 @@ function save() {
     stableDurationMs:        parseInt(document.getElementById('sdm').value)   || 3000,
     minDrinkDeltaMl:         parseFloat(document.getElementById('mnd').value) || 20,
     maxDrinkDeltaMl:         parseFloat(document.getElementById('mxd').value) || 500,
-    cloudEnabled:            document.getElementById('ce').checked,
-    cloudBaseUrl:            document.getElementById('cu').value.replace(/\/+$/, ''),
+    cloudEnabled:            cloudEnabled,
+    cloudBaseUrl:            cloudUrl || '',
     mqttEnabled:             document.getElementById('me').checked,
     mqttBrokerHost:          document.getElementById('mh').value,
     mqttBrokerPort:          parseInt(document.getElementById('mp').value)  || 1883,
@@ -298,6 +310,16 @@ function save() {
       j.ok ? (j.reboot_required ? '儲存成功。部分設定需重新啟動後生效。' : '儲存成功！') :
               '錯誤：' + (j.error || '未知'), j.ok);
   }).catch(() => showMsg('msg', '連線失敗', false));
+}
+
+function normaliseCloudOrigin(value) {
+  const trimmed = String(value || '').trim();
+  if (!trimmed) return '';
+  try {
+    const url = new URL(trimmed);
+    if (url.protocol !== 'https:' || url.username || url.password || url.search || url.hash || (url.pathname && url.pathname !== '/')) return null;
+    return url.origin;
+  } catch (_) { return null; }
 }
 
 function reboot() {

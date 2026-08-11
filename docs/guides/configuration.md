@@ -8,6 +8,10 @@ Normal Mode 使用伺服器端單一 session slot：新登入會取代舊 sessio
 24 小時自動失效；裝置重開機也會讓 session 失效。管理介面目前以 HTTP 提供，因此請將它
 限制在信任的隔離 LAN，避免同網段攻擊者攔截並重放 token。
 
+設定頁第一層只顯示日常會調整的「飲水與提醒」及「蜂鳴器」。感測器、WiFi、NTP、Cloud
+sync 與 MQTT 收在「網路、感測器與整合」進階區；秤重校正仍是獨立區塊，避免誤把校正操作
+當成一般設定。
+
 ---
 
 ## 飲水偵測
@@ -115,8 +119,10 @@ HydraCup Service。ESP32 仍是飲水事件與提醒狀態的唯一真實來源�
 | Device ID | `cloudDeviceId` | 首次啟動由裝置依 MAC 產生；WebUI 唯讀顯示 |
 | Device token SHA-256 | `cloudDeviceTokenHash` | 供 Cloudflare allowlist 使用；不是 raw token，WebUI 唯讀顯示 |
 
-Service URL 不可附加 `/api/v1/device/sync`，前後也不可留下空白。背景 worker 每 15 秒同步
-一次；新事件或 command ACK 會要求提早同步。登入後的裝置首頁「04 裝置狀態」會顯示：
+WebUI 與 `POST /api/config` 都會移除 Service URL 前後空白與結尾斜線，並只接受純 HTTPS
+origin。不可附加 `/api/v1/device/sync`、其他 path、query、fragment 或帳密；不合法值會在
+套用其他設定前回傳 `400`。背景 worker 每 15 秒同步一次；新事件或 command ACK 會要求
+提早同步。登入後的裝置首頁「04 裝置狀態」會顯示：
 
 - `正常 · 待送 0`／HTTP `200`：最近一次同步成功，durable outbox 已送完。
 - `待送 N`：尚有事件等待 server ACK；短暫離線時屬正常現象。

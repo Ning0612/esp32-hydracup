@@ -48,7 +48,7 @@ Full demo video:
 
 WebUI screenshots:
 
-The local dashboard is served by the ESP32 at `http://<device-ip>`. The screenshots below cover the live dashboard, history analytics, and device configuration workflows.
+The local dashboard is served by the ESP32 at `http://<device-ip>`. The current Console uses the same cup-and-ripple visual language as the hosted LIFF UI, supports light and dark themes, and changes to a fixed three-item dock on small screens. It keeps live hardware diagnostics dense while the hosted UI remains focused on daily hydration. The screenshots below cover the dashboard, history analytics, and device configuration workflows; minor styling may evolve between releases.
 
 <div align="center">
   <table align="center">
@@ -86,7 +86,7 @@ The local dashboard is served by the ESP32 at `http://<device-ip>`. The screensh
 ## Features
 
 - **Automatic drink detection** — 6-state machine triggered only via cup-lift path, avoids false positives
-- **Web dashboard** — real-time weight, daily progress, and drink history at `http://<device-ip>`
+- **Responsive Device Console** — cup/reminder state, real-time weight, progress, history, diagnostics, and progressively disclosed device settings at `http://<device-ip>`
 - **Discord Webhook** — online notification, per-drink notification, daily summary at midnight
 - **JSONL event log** — monthly log files stored on a dedicated LittleFS partition (`/logs/`)
 - **OLED display** — 2-page rotating status display with auto-sleep

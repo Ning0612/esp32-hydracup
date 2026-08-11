@@ -3,11 +3,12 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="darkreader-lock">
 <title>HydraCup / Device Console</title>
 <script>
 (function () {
-  var key = 'iot-ui-theme', stored = null;
-  try { stored = localStorage.getItem(key); } catch (e) {}
+  var key = 'hydracup-theme', stored = null;
+  try { stored = localStorage.getItem(key) || localStorage.getItem('iot-ui-theme'); } catch (e) {}
   var theme = (stored === 'light' || stored === 'dark') ? stored :
     (matchMedia('(prefers-color-scheme:dark)').matches ? 'dark' : 'light');
   document.documentElement.dataset.theme = theme;
@@ -20,7 +21,7 @@
 <header class="topbar"><div class="topbar-in">
   <a class="brand" href="/"><span class="brand-mark">HC</span><span class="brand-copy">HYDRACUP<span class="brand-sub">LOCAL DEVICE / WATER TRACKER</span></span></a>
   <div class="topbar-actions">
-    <nav class="nav" aria-label="主要導覽"><a class="active" aria-current="page" href="/">Console</a><a href="/history">原始紀錄</a><a href="/settings">裝置設定</a></nav>
+    <nav class="nav" aria-label="主要導覽"><a class="active" aria-current="page" href="/">裝置</a><a href="/history">紀錄</a><a href="/settings">設定</a></nav>
     <div class="theme-toggle" role="group" aria-label="色彩主題"><button type="button" data-theme-choice="light" aria-pressed="false">LIGHT</button><button type="button" data-theme-choice="dark" aria-pressed="false">DARK</button></div>
     <button class="nav-logout" type="button" data-logout>登出</button>
   </div>
@@ -29,7 +30,14 @@
 <main class="wrap">
   <div class="intro"><div><div class="kicker">01 / local device console</div><h1>裝置 Console</h1></div><p>這裡保留秤重、硬體、同步與除錯資訊；日常飲水互動請使用託管 WebUI 或 LINE。</p></div>
 
-  <section class="status-banner" id="main-banner"><div><div class="status-label">LIVE SENSOR STATUS</div><div class="status-value" id="hero-state">等待資料</div></div><div class="updated">最後更新<br><strong id="updated-at">--:--:--</strong></div></section>
+  <section class="local-cup-hero state-off" id="main-banner">
+    <div class="local-cup-visual" id="cup-visual" aria-hidden="true">
+      <div class="local-drop"></div><div class="local-cup-water"></div><div class="local-cup-body"></div><i></i><i></i>
+    </div>
+    <div class="local-cup-copy"><div class="status-label">CUP &amp; REMINDER / LIVE</div><div class="status-value" id="hero-state">等待資料</div>
+      <p id="hero-detail">放上水杯並穩定後，才會開始飲水與提醒計時。</p></div>
+    <div class="updated">最後更新<br><strong id="updated-at">--:--:--</strong></div>
+  </section>
   <div class="message" id="connection-msg" aria-live="polite"></div>
 
   <div class="feature-grid">
@@ -58,17 +66,26 @@
 
 <script src="/ui.js"></script>
 <script>
-const STATE_NAMES = { no_cup:'無杯子', unstable:'不穩定', stable:'穩定', possible_drink:'正在喝', drink_confirmed:'喝水完成', refill_detected:'補水中' };
+const STATE_NAMES = { no_cup:'等待放上水杯', unstable:'水杯正在穩定', stable:'水杯已放妥', possible_drink:'偵測到拿起水杯', drink_confirmed:'剛完成一次飲水', refill_detected:'偵測到補水' };
+const STATE_DETAILS = {
+  no_cup:'放上水杯並穩定後，才會開始飲水與提醒計時。',
+  unstable:'請讓杯子靜置片刻，完成重量判讀。',
+  stable:'正在觀察重量；拿起喝水並放回後會確認飲水量。',
+  possible_drink:'放回杯子後會確認本次飲水量。',
+  drink_confirmed:'已記錄飲水量，新的提醒週期從現在重新開始。',
+  refill_detected:'補水只更新杯中重量，不會被算成飲水量。'
+};
 const REMINDER_NAMES = { waiting_for_cup:'放上杯子後開始', counting:'計時中', paused_cup_away:'杯子離開，已暫停', alerted:'需要喝水', snoozed:'稍後提醒', paused_today:'今天已暫停', disabled:'已停用' };
 function setDot(id, cls) { document.getElementById(id).className = 'dot ' + (cls || ''); }
 function setVal(id, t) { document.getElementById(id).textContent = t; }
 function update(d) {
   const state = STATE_NAMES[d.cup_state_name] || d.cup_state_name || '等待資料';
-  const banner = document.getElementById('main-banner'); banner.className = 'status-banner' + (d.cup_state_name === 'no_cup' ? ' state-off' : '');
-  setVal('wt', d.weight_g != null ? Math.round(d.weight_g) + ' g' : '-- g'); setVal('st', state); setVal('hero-state', state);
+  const banner = document.getElementById('main-banner'); banner.className = 'local-cup-hero state-' + (d.cup_state_name || 'off');
+  document.getElementById('cup-visual').className = 'local-cup-visual state-' + (d.cup_state_name || 'off');
+  setVal('wt', d.weight_g != null ? Math.round(d.weight_g) + ' g' : '-- g'); setVal('st', state); setVal('hero-state', state); setVal('hero-detail', STATE_DETAILS[d.cup_state_name] || '正在等待下一筆裝置狀態。');
   const t = d.today_total_ml || 0, g = d.daily_goal_ml || 2000, p = g > 0 ? Math.min(100, Math.round(t * 100 / g)) : 0;
   setVal('today', Math.round(t)); const bar = document.getElementById('bar'); bar.style.width = p + '%'; bar.className = 'progress-fill' + (p >= 100 ? ' done' : ''); setVal('pct', p + '% / 目標 ' + g + ' ml（' + (d.drink_count_today || 0) + ' 次）');
-  setVal('last', d.last_drink_ml > 0 ? Math.round(d.last_drink_ml) + ' ml' : '--'); const s = d.next_reminder_sec || 0; const rs = d.reminder_state || ''; setVal('next', s > 0 ? (s >= 60 ? Math.ceil(s / 60) + ' 分鐘後' : s + ' 秒後') : (REMINDER_NAMES[rs] || '--'));
+  setVal('last', d.last_drink_ml > 0 ? Math.round(d.last_drink_ml) + ' ml' : '--'); const s = d.next_reminder_sec || 0; const rs = d.reminder_state || ''; const reminderPaused = ['waiting_for_cup', 'paused_cup_away', 'paused_today', 'disabled'].includes(rs); setVal('next', !reminderPaused && s > 0 ? (s >= 60 ? Math.ceil(s / 60) + ' 分鐘後' : s + ' 秒後') : (REMINDER_NAMES[rs] || '--'));
   setVal('updated-at', new Date().toLocaleTimeString('zh-TW', { hour12:false })); document.getElementById('connection-msg').style.display = 'none';
   setDot('d-ntp', d.ntp_synced ? 'ok' : 'warn'); setVal('v-ntp', d.ntp_synced ? '已同步' : '未同步');
   if (!d.webhook_configured) { setDot('d-wh', ''); setVal('v-wh', '未設定'); } else if (d.webhook_last_ok) { setDot('d-wh', 'ok'); setVal('v-wh', '發送成功'); } else { setDot('d-wh', 'warn'); setVal('v-wh', '發送失敗'); }
@@ -77,7 +94,7 @@ function update(d) {
   setDot('d-pair', d.cloud_pairing_code ? 'ok' : ''); setVal('v-pair', d.cloud_pairing_code || '已綁定／等待產生');
   setDot('d-hx', d.hw_hx711 ? 'ok' : 'err'); setVal('v-hx', d.hw_hx711 ? '正常' : '異常'); setDot('d-ol', d.hw_oled ? 'ok' : 'warn'); setVal('v-ol', d.hw_oled ? '正常' : '異常');
 }
-function poll() { hydraFetch('/api/status').then(r => r.json()).then(update).catch(() => { const banner = document.getElementById('main-banner'); banner.className = 'status-banner state-off'; setVal('hero-state', '暫時離線'); const el = document.getElementById('connection-msg'); el.textContent = '暫時無法連線：正在重試…'; el.className = 'message error'; el.style.display = 'block'; }); }
+function poll() { hydraFetch('/api/status').then(r => r.json()).then(update).catch(() => { const banner = document.getElementById('main-banner'); banner.className = 'local-cup-hero state-off'; document.getElementById('cup-visual').className = 'local-cup-visual state-off'; setVal('hero-state', '暫時離線'); setVal('hero-detail', '裝置連線中斷，畫面會自動重試。'); const el = document.getElementById('connection-msg'); el.textContent = '暫時無法連線：正在重試…'; el.className = 'message error'; el.style.display = 'block'; }); }
 poll(); setInterval(poll, 2000);
 </script>
 </body>
