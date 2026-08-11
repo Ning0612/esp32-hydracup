@@ -102,6 +102,10 @@ Normal Mode 下運行，ESP32 連上 WiFi 後提供。
   "drink_count_today": 5,
   "last_drink_ml": 230.0,
   "next_reminder_sec": 1800,
+  "cloud_history_backfill_state": "complete",
+  "cloud_history_backfill_running": false,
+  "cloud_history_backfill_uploaded_days": 45,
+  "cloud_history_backfill_http_status": 200,
   "webhook_configured": true,
   "webhook_last_ok": true,
   "discord_worker_ready": true,
@@ -133,6 +137,10 @@ Normal Mode 下運行，ESP32 連上 WiFi 後提供。
 | `drink_count_today` | uint32 | 今日飲水次數 |
 | `last_drink_ml` | float | 上次飲水量（ml） |
 | `next_reminder_sec` | uint32 | 下次提醒倒數（秒） |
+| `cloud_history_backfill_state` | string | `idle`、`queued`、`uploading`、`retrying` 或 `complete` |
+| `cloud_history_backfill_running` | bool | 歷史補傳背景工作是否仍會繼續 |
+| `cloud_history_backfill_uploaded_days` | uint32 | 本次開機／工作已由 service 確認的日期數 |
+| `cloud_history_backfill_http_status` | int | 最近一次歷史補傳 HTTP status；尚未送出為 0 |
 | `webhook_configured` | bool | Webhook URL 已設定 |
 | `webhook_last_ok` | bool | 最後一次 Webhook 是否成功 |
 | `discord_worker_ready` | bool | 持久 Discord worker 已建立 |
@@ -334,6 +342,23 @@ WiFi、NTP、MQTT 或進階感測器設定有異動時，回應會要求重新�
 ```json
 {"ok": true}
 ```
+
+---
+
+### `POST /api/cloud/history-backfill`
+
+需要登入與 CSRF token。建立可跨重啟續傳的背景工作，逐月讀取 `/logfs/logs`，只把今天
+以前的每日累計量、飲水次數與最後飲水時間送到已設定的 HydraCup Service。重複呼叫進行中
+的工作不會重設游標；完成後再次呼叫會從頭安全重送。
+
+成功排入回 `202`：
+
+```json
+{"ok": true, "state": "queued"}
+```
+
+logfs 不可用回 `503 logfs_unavailable`；Cloud sync 未完整設定回
+`409 cloud_not_configured`。執行狀態由 `GET /api/status` 查詢。
 
 ---
 

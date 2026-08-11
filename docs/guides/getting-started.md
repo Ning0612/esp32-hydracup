@@ -92,10 +92,12 @@ LINE Login／Messaging API channel。完整的使用與配對流程見
 2. 在「Cloud sync」勾選「啟用 HTTPS 同步」
 3. Service URL 只填 Pages origin，例如 `https://hydracup-service.pages.dev`；不要附加
    `/api/v1/device/sync`，也不要在前後留下空白
-4. 核對唯讀的 Device ID 與 Device token SHA-256 已和 Cloudflare production allowlist 一致
+4. 確認裝置時區為 `UTC+8`，並核對唯讀的 Device ID 與 Device token SHA-256 已和 Cloudflare production allowlist 一致
 5. 儲存設定並依提示重新啟動裝置
 6. 回到裝置首頁「03 裝置狀態」，等待 Cloud sync 顯示 `正常 · 待送 0`，HTTP 顯示 `200`
 7. 同一區的「WebUI 配對碼」會顯示 8 碼、10 分鐘有效的配對碼；完成 LINE 配對後該碼會消失
+8. 若 Local 歷史早於啟用 Cloud sync，回到設定頁「06 Cloud sync」按「開始補傳」，等待
+   顯示完成後重新開啟 LIFF「趨勢」
 
 配對碼只顯示於登入後的本機 Device Console，不會顯示在 OLED。請勿分享管理密碼、
 raw device token 或 Device token SHA-256。
@@ -130,3 +132,4 @@ raw device token 或 Device token SHA-256。
 | Cloud sync 顯示 `HTTP --` | 確認 Service URL 前後沒有空白且只填 HTTPS origin；儲存後重新啟動，等待至少 15 秒 |
 | Cloud sync 顯示 HTTP 401 | 核對 Cloudflare production 的 `DEVICE_ID` 與 `DEVICE_TOKEN_HASH` 是否和 Device Console 完全一致 |
 | 配對碼一直顯示等待產生 | 先確認 Cloud sync HTTP 200；配對碼只會在裝置尚未綁定且成功同步後出現 |
+| 歷史補傳停在暫時失敗 | 會每 15 秒自動重試；先確認 Cloud sync HTTP 200，400 時需確認 service 已部署相容版本與 D1 migration |

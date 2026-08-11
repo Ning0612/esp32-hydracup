@@ -1,8 +1,11 @@
 #include "CloudSyncClient.h"
 
 #include <algorithm>
+#include <cmath>
 #include <cstdio>
 #include <cstring>
+#include <ctime>
+#include <dirent.h>
 #include <sys/stat.h>
 #include <unistd.h>
 
@@ -26,7 +29,11 @@ constexpr const char* OUTBOX_BACKUP_PATH = "/logfs/cloud/outbox.bak";
 constexpr uint32_t SYNC_INTERVAL_MS = 15000;
 constexpr uint8_t MAX_BATCH_EVENTS = 12;
 constexpr uint8_t MAX_BATCH_ACKS = 8;
+constexpr uint8_t MAX_HISTORY_BATCH_DAYS = 31;
 constexpr long MAX_OUTBOX_BYTES = 512 * 1024;
+constexpr size_t HISTORY_LOG_FILENAME_LENGTH = sizeof("drink-YYYY-MM.jsonl") - 1;
+constexpr size_t HISTORY_LOG_SUFFIX_OFFSET = sizeof("drink-YYYY-MM") - 1;
+static_assert(HISTORY_LOG_FILENAME_LENGTH == 19, "history log filename contract changed");
 
 const char CLOUD_ROOT_CA[] = R"EOF(
 -----BEGIN CERTIFICATE-----
@@ -60,6 +67,50 @@ esp_err_t captureHttpEvent(esp_http_client_event_t* event) {
     return ESP_OK;
 }
 
+bool validHistoryMonth(const char* value) {
+    if (!value || std::strlen(value) != 7 || value[4] != '-') return false;
+    for (size_t index = 0; index < 7; ++index) {
+        if (index != 4 && (value[index] < '0' || value[index] > '9')) return false;
+    }
+    const int month = (value[5] - '0') * 10 + value[6] - '0';
+    return month >= 1 && month <= 12;
+}
+
+bool validHistoryTimestamp(const char* value, const std::string& month, const char* today) {
+    if (!value || std::strlen(value) != 25 || value[4] != '-' || value[7] != '-' ||
+        value[10] != 'T' || value[13] != ':' || value[16] != ':' ||
+        (value[19] != '+' && value[19] != '-') || value[22] != ':' ||
+        std::strncmp(value, month.c_str(), 7) != 0 ||
+        (today && std::strncmp(value, today, 10) >= 0)) return false;
+    for (size_t index = 0; index < 25; ++index) {
+        if (index == 4 || index == 7 || index == 10 || index == 13 || index == 16 ||
+            index == 19 || index == 22) continue;
+        if (value[index] < '0' || value[index] > '9') return false;
+    }
+    const int year = (value[0] - '0') * 1000 + (value[1] - '0') * 100 +
+                     (value[2] - '0') * 10 + value[3] - '0';
+    const int monthNumber = (value[5] - '0') * 10 + value[6] - '0';
+    const int day = (value[8] - '0') * 10 + value[9] - '0';
+    static constexpr uint8_t DAYS_BY_MONTH[] = { 31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31 };
+    if (year < 2021 || monthNumber < 1 || monthNumber > 12) return false;
+    int maxDay = DAYS_BY_MONTH[monthNumber - 1];
+    if (monthNumber == 2 && (year % 400 == 0 || (year % 4 == 0 && year % 100 != 0))) ++maxDay;
+    const int hour = (value[11] - '0') * 10 + value[12] - '0';
+    const int minute = (value[14] - '0') * 10 + value[15] - '0';
+    const int second = (value[17] - '0') * 10 + value[18] - '0';
+    const int offsetHour = (value[20] - '0') * 10 + value[21] - '0';
+    const int offsetMinute = (value[23] - '0') * 10 + value[24] - '0';
+    return day >= 1 && day <= maxDay && hour <= 23 && minute <= 59 && second <= 59 &&
+           offsetHour <= 14 && offsetMinute <= 59;
+}
+
+bool currentLocalDate(char value[11]) {
+    const time_t now = time(nullptr);
+    struct tm local = {};
+    if (now < 0 || !localtime_r(&now, &local) || local.tm_year <= 120) return false;
+    return std::strftime(value, 11, "%Y-%m-%d", &local) == 10;
+}
+
 }  // namespace
 
 bool CloudSyncClient::init(AppState& appState, AppConfig& config,
@@ -74,7 +125,9 @@ bool CloudSyncClient::init(AppState& appState, AppConfig& config,
     _configMutex = xSemaphoreCreateMutex();
     _commandMutex = xSemaphoreCreateMutex();
     _overflowMutex = xSemaphoreCreateMutex();
-    if (!_commandQueue || !_ackQueue || !_statusMutex || !_configMutex || !_commandMutex || !_overflowMutex) {
+    _historyBackfillMutex = xSemaphoreCreateMutex();
+    if (!_commandQueue || !_ackQueue || !_statusMutex || !_configMutex || !_commandMutex ||
+        !_overflowMutex || !_historyBackfillMutex) {
         LOG_ERROR(TAG, "queue or mutex allocation failed");
         return false;
     }
@@ -85,6 +138,7 @@ bool CloudSyncClient::init(AppState& appState, AppConfig& config,
         mkdir("/logfs/cloud", 0777);
         _recoverOutbox();
         _loadSequenceAndCount();
+        _loadHistoryBackfillProgress();
     }
     if (xTaskCreate(_taskFunc, "cloud_sync", 10240, this, 1, &_task) != pdPASS) {
         LOG_ERROR(TAG, "worker creation failed");
@@ -101,6 +155,7 @@ bool CloudSyncClient::init(AppState& appState, AppConfig& config,
 void CloudSyncClient::configure(const AppConfig& config) {
     if (!_configMutex || xSemaphoreTake(_configMutex, pdMS_TO_TICKS(100)) != pdTRUE) return;
     _connection.enabled = config.cloudEnabled;
+    _connection.timezoneOffsetSec = config.timezoneOffsetSec + config.daylightOffsetSec;
     std::snprintf(_connection.baseUrl, sizeof(_connection.baseUrl), "%s",
                   config.cloudBaseUrl.c_str());
     std::snprintf(_connection.deviceId, sizeof(_connection.deviceId), "%s",
@@ -176,6 +231,7 @@ void CloudSyncClient::persistSettings(const CloudAppliedSettings& settings) {
 bool CloudSyncClient::isConfigured() const {
     const ConnectionConfig config = _connectionConfig();
     return _workerReady.load() && _logFsOk && config.enabled &&
+           config.timezoneOffsetSec == 8 * 3600 &&
            std::strncmp(config.baseUrl, "https://", 8) == 0 &&
            config.deviceId[0] && std::strlen(config.token) == 64;
 }
@@ -205,12 +261,42 @@ std::string CloudSyncClient::tokenHash() const {
     return encoded;
 }
 
+bool CloudSyncClient::requestHistoryBackfill() {
+    if (!isConfigured() || !_historyBackfillMutex) return false;
+    xSemaphoreTake(_historyBackfillMutex, portMAX_DELAY);
+    if (_historyBackfillActive.load()) {
+        xSemaphoreGive(_historyBackfillMutex);
+        return true;
+    }
+    const bool saved = _saveHistoryBackfillProgress(true, "");
+    if (saved) {
+        _historyBackfillCursor[0] = '\0';
+        _historyBackfillUploadedDays.store(0);
+        _historyBackfillHttpStatus.store(0);
+        _historyBackfillActive.store(true);
+        _historyBackfillState.store(CloudHistoryBackfillState::QUEUED);
+    }
+    xSemaphoreGive(_historyBackfillMutex);
+    return saved;
+}
+
+const char* CloudSyncClient::historyBackfillState() const {
+    switch (_historyBackfillState.load()) {
+        case CloudHistoryBackfillState::QUEUED: return "queued";
+        case CloudHistoryBackfillState::UPLOADING: return "uploading";
+        case CloudHistoryBackfillState::RETRYING: return "retrying";
+        case CloudHistoryBackfillState::COMPLETE: return "complete";
+        default: return "idle";
+    }
+}
+
 void CloudSyncClient::_taskFunc(void* param) {
     static_cast<CloudSyncClient*>(param)->_taskLoop();
 }
 
 void CloudSyncClient::_taskLoop() {
     uint32_t lastAttemptMs = 0;
+    uint32_t lastHistoryAttemptMs = 0;
     for (;;) {
         _drainOverflowEvents();
         _drainDeferredAcks();
@@ -221,6 +307,11 @@ void CloudSyncClient::_taskLoop() {
             (requested || now - lastAttemptMs >= SYNC_INTERVAL_MS)) {
             lastAttemptMs = now;
             _lastSyncOk.store(_syncOnce());
+        }
+        if (_historyBackfillActive.load() && isConfigured() && _wifiConnected.load() &&
+            (lastHistoryAttemptMs == 0 || now - lastHistoryAttemptMs >= SYNC_INTERVAL_MS)) {
+            lastHistoryAttemptMs = now;
+            _historyBackfillOnce();
         }
         vTaskDelay(pdMS_TO_TICKS(250));
     }
@@ -433,7 +524,7 @@ bool CloudSyncClient::_syncOnce() {
 
     std::string response;
     int statusCode = 0;
-    const bool posted = _post(connection, body, response, statusCode);
+    const bool posted = _post(connection, body, response, statusCode, "/api/v1/device/sync");
     _lastHttpStatus.store(statusCode);
     if (!posted || !_applyResponse(response, maxSentSequence)) {
         for (int i = ackCount - 1; i >= 0; --i) xQueueSendToFront(_ackQueue, &acks[i], 0);
@@ -444,10 +535,10 @@ bool CloudSyncClient::_syncOnce() {
 }
 
 bool CloudSyncClient::_post(const ConnectionConfig& connection, const std::string& body,
-                            std::string& response, int& statusCode) {
+                            std::string& response, int& statusCode, const char* path) {
     std::string url = connection.baseUrl;
     while (!url.empty() && url.back() == '/') url.pop_back();
-    url += "/api/v1/device/sync";
+    url += path;
     esp_http_client_config_t config = {};
     config.url = url.c_str();
     config.method = HTTP_METHOD_POST;
@@ -468,6 +559,262 @@ bool CloudSyncClient::_post(const ConnectionConfig& connection, const std::strin
     if (!ok) LOG_WARN(TAG, "sync failed error=%s status=%d", esp_err_to_name(result), statusCode);
     esp_http_client_cleanup(client);
     return ok;
+}
+
+bool CloudSyncClient::_loadHistoryBackfillProgress() {
+    _historyBackfillCursor[0] = '\0';
+    _historyBackfillIdentityTag[0] = '\0';
+    if (!lockNvs()) return false;
+    nvs_handle_t handle = 0;
+    uint8_t active = 0;
+    bool ok = true;
+    const esp_err_t opened = nvs_open("cloud_sync", NVS_READONLY, &handle);
+    if (opened == ESP_OK) {
+        const esp_err_t activeResult = nvs_get_u8(handle, "hist_active", &active);
+        size_t cursorLength = sizeof(_historyBackfillCursor);
+        const esp_err_t cursorResult = nvs_get_str(
+            handle, "hist_cursor", _historyBackfillCursor, &cursorLength);
+        size_t identityLength = sizeof(_historyBackfillIdentityTag);
+        const esp_err_t identityResult = nvs_get_str(
+            handle, "hist_identity", _historyBackfillIdentityTag, &identityLength);
+        ok = (activeResult == ESP_OK || activeResult == ESP_ERR_NVS_NOT_FOUND) &&
+             (cursorResult == ESP_OK || cursorResult == ESP_ERR_NVS_NOT_FOUND) &&
+             (identityResult == ESP_OK || identityResult == ESP_ERR_NVS_NOT_FOUND);
+        nvs_close(handle);
+    } else if (opened != ESP_ERR_NVS_NOT_FOUND) {
+        ok = false;
+    }
+    unlockNvs();
+    if (!validHistoryMonth(_historyBackfillCursor)) _historyBackfillCursor[0] = '\0';
+    _historyBackfillActive.store(ok && active != 0);
+    _historyBackfillState.store(ok && active != 0
+        ? CloudHistoryBackfillState::QUEUED : CloudHistoryBackfillState::IDLE);
+    return ok;
+}
+
+bool CloudSyncClient::_saveHistoryBackfillProgress(bool active, const char* cursorMonth) {
+    const std::string identity = _historyBackfillIdentity();
+    if (identity.size() != 64) return false;
+    if (!lockNvs()) return false;
+    nvs_handle_t handle = 0;
+    bool ok = false;
+    if (nvs_open("cloud_sync", NVS_READWRITE, &handle) == ESP_OK) {
+        ok = nvs_set_u8(handle, "hist_active", active ? 1 : 0) == ESP_OK &&
+             nvs_set_str(handle, "hist_cursor", cursorMonth ? cursorMonth : "") == ESP_OK &&
+             nvs_set_str(handle, "hist_identity", identity.c_str()) == ESP_OK &&
+             nvs_commit(handle) == ESP_OK;
+        nvs_close(handle);
+    }
+    unlockNvs();
+    if (ok) {
+        std::strncpy(_historyBackfillIdentityTag, identity.c_str(),
+                     sizeof(_historyBackfillIdentityTag) - 1);
+        _historyBackfillIdentityTag[sizeof(_historyBackfillIdentityTag) - 1] = '\0';
+    }
+    return ok;
+}
+
+std::string CloudSyncClient::_historyBackfillIdentity() const {
+    const ConnectionConfig connection = _connectionConfig();
+    if (!connection.baseUrl[0] || !connection.deviceId[0] || !connection.token[0]) return {};
+    std::string input(connection.baseUrl);
+    input.push_back('\0');
+    input += connection.deviceId;
+    input.push_back('\0');
+    input += connection.token;
+    unsigned char digest[32] = {};
+    if (mbedtls_sha256(reinterpret_cast<const unsigned char*>(input.data()),
+                       input.size(), digest, 0) != 0) return {};
+    char encoded[65] = {};
+    for (size_t index = 0; index < sizeof(digest); ++index) {
+        std::snprintf(encoded + index * 2, 3, "%02x", digest[index]);
+    }
+    return encoded;
+}
+
+bool CloudSyncClient::_nextHistoryMonth(const char* afterMonth, std::string& month) {
+    month.clear();
+    if (!_eventLogger || !_eventLogger->lockFilesystem(pdMS_TO_TICKS(2000))) return false;
+    DIR* directory = opendir("/logfs/logs");
+    if (!directory) {
+        _eventLogger->unlockFilesystem();
+        return false;
+    }
+    for (dirent* entry = readdir(directory); entry; entry = readdir(directory)) {
+        const char* name = entry->d_name;
+        if (std::strlen(name) != HISTORY_LOG_FILENAME_LENGTH ||
+            std::strncmp(name, "drink-", 6) != 0 ||
+            std::strcmp(name + HISTORY_LOG_SUFFIX_OFFSET, ".jsonl") != 0) continue;
+        char candidate[8] = {};
+        std::memcpy(candidate, name + 6, 7);
+        if (!validHistoryMonth(candidate) ||
+            (afterMonth && afterMonth[0] && std::strcmp(candidate, afterMonth) <= 0)) continue;
+        if (month.empty() || month > candidate) month = candidate;
+    }
+    closedir(directory);
+    _eventLogger->unlockFilesystem();
+    return true;
+}
+
+bool CloudSyncClient::_buildHistoryBatch(const std::string& month, const char* today,
+                                         HistoryDay* days, uint8_t& dayCount) {
+    dayCount = 0;
+    if (!days || !_eventLogger) return false;
+    char path[64] = {};
+    std::snprintf(path, sizeof(path), "/logfs/logs/drink-%s.jsonl", month.c_str());
+    long offset = 0;
+    bool finished = false;
+    while (!finished) {
+        char lines[8][256] = {};
+        uint8_t lineCount = 0;
+        if (!_eventLogger->lockFilesystem(pdMS_TO_TICKS(2000))) return false;
+        FILE* file = std::fopen(path, "r");
+        bool ioOk = file && std::fseek(file, offset, SEEK_SET) == 0;
+        while (ioOk && lineCount < 8 && std::fgets(lines[lineCount], sizeof(lines[lineCount]), file)) {
+            ++lineCount;
+        }
+        const long nextOffset = file ? std::ftell(file) : -1;
+        finished = file && std::feof(file);
+        if (file && std::ferror(file)) ioOk = false;
+        if (file && std::fclose(file) != 0) ioOk = false;
+        _eventLogger->unlockFilesystem();
+        if (!ioOk || nextOffset < offset || (lineCount == 0 && !finished)) return false;
+        offset = nextOffset;
+
+        for (uint8_t lineIndex = 0; lineIndex < lineCount; ++lineIndex) {
+            cJSON* entry = cJSON_Parse(lines[lineIndex]);
+            cJSON* timestamp = entry ? cJSON_GetObjectItemCaseSensitive(entry, "ts") : nullptr;
+            cJSON* total = entry ? cJSON_GetObjectItemCaseSensitive(entry, "total") : nullptr;
+            const char* value = cJSON_IsString(timestamp) ? timestamp->valuestring : nullptr;
+            const bool validDate = validHistoryTimestamp(value, month, today);
+            if (!validDate || !cJSON_IsNumber(total) || !std::isfinite(total->valuedouble) ||
+                total->valuedouble < 0 || total->valuedouble > 100000) {
+                cJSON_Delete(entry);
+                continue;
+            }
+            char localDate[11] = {};
+            std::memcpy(localDate, value, 10);
+            uint8_t index = 0;
+            while (index < dayCount && std::strcmp(days[index].localDate, localDate) != 0) ++index;
+            if (index == dayCount) {
+                if (dayCount >= MAX_HISTORY_BATCH_DAYS) {
+                    cJSON_Delete(entry);
+                    continue;
+                }
+                std::strncpy(days[index].localDate, localDate, sizeof(days[index].localDate) - 1);
+                ++dayCount;
+            }
+            days[index].totalMl = std::max(days[index].totalMl,
+                                           static_cast<float>(total->valuedouble));
+            if (days[index].drinkCount < 10000) ++days[index].drinkCount;
+            if (!days[index].lastDrinkAt[0] ||
+                std::strcmp(value, days[index].lastDrinkAt) > 0) {
+                std::strncpy(days[index].lastDrinkAt, value,
+                             sizeof(days[index].lastDrinkAt) - 1);
+            }
+            cJSON_Delete(entry);
+        }
+    }
+    return true;
+}
+
+bool CloudSyncClient::_historyBackfillOnce() {
+    if (!_historyBackfillMutex) return false;
+    char cursor[8] = {};
+    xSemaphoreTake(_historyBackfillMutex, portMAX_DELAY);
+    const std::string currentIdentity = _historyBackfillIdentity();
+    if (currentIdentity.empty() || currentIdentity != _historyBackfillIdentityTag) {
+        if (currentIdentity.empty() || !_saveHistoryBackfillProgress(true, "")) {
+            _historyBackfillState.store(CloudHistoryBackfillState::RETRYING);
+            xSemaphoreGive(_historyBackfillMutex);
+            return false;
+        }
+        _historyBackfillCursor[0] = '\0';
+        _historyBackfillUploadedDays.store(0);
+    }
+    std::strncpy(cursor, _historyBackfillCursor, sizeof(cursor) - 1);
+    _historyBackfillState.store(CloudHistoryBackfillState::UPLOADING);
+    xSemaphoreGive(_historyBackfillMutex);
+
+    char today[11] = {};
+    if (!currentLocalDate(today)) {
+        _historyBackfillState.store(CloudHistoryBackfillState::RETRYING);
+        return false;
+    }
+    std::string month;
+    if (!_nextHistoryMonth(cursor, month)) {
+        _historyBackfillState.store(CloudHistoryBackfillState::RETRYING);
+        return false;
+    }
+    if (month.empty()) {
+        xSemaphoreTake(_historyBackfillMutex, portMAX_DELAY);
+        const bool saved = _saveHistoryBackfillProgress(false, _historyBackfillCursor);
+        if (saved) {
+            _historyBackfillActive.store(false);
+            _historyBackfillState.store(CloudHistoryBackfillState::COMPLETE);
+        } else {
+            _historyBackfillState.store(CloudHistoryBackfillState::RETRYING);
+        }
+        xSemaphoreGive(_historyBackfillMutex);
+        return saved;
+    }
+
+    HistoryDay days[MAX_HISTORY_BATCH_DAYS] = {};
+    uint8_t dayCount = 0;
+    if (!_buildHistoryBatch(month, today, days, dayCount)) {
+        _historyBackfillState.store(CloudHistoryBackfillState::RETRYING);
+        return false;
+    }
+    if (dayCount > 0) {
+        const ConnectionConfig connection = _connectionConfig();
+        cJSON* request = cJSON_CreateObject();
+        cJSON* values = request ? cJSON_AddArrayToObject(request, "days") : nullptr;
+        if (!request || !values) {
+            cJSON_Delete(request);
+            _historyBackfillState.store(CloudHistoryBackfillState::RETRYING);
+            return false;
+        }
+        cJSON_AddNumberToObject(request, "schemaVersion", 1);
+        cJSON_AddStringToObject(request, "deviceId", connection.deviceId);
+        cJSON_AddStringToObject(request, "firmwareVersion", APP_VERSION);
+        for (uint8_t index = 0; index < dayCount; ++index) {
+            cJSON* day = cJSON_CreateObject();
+            cJSON_AddStringToObject(day, "localDate", days[index].localDate);
+            cJSON_AddNumberToObject(day, "totalMl", days[index].totalMl);
+            cJSON_AddNumberToObject(day, "drinkCount", days[index].drinkCount);
+            cJSON_AddStringToObject(day, "lastDrinkAt", days[index].lastDrinkAt);
+            cJSON_AddItemToArray(values, day);
+        }
+        const std::string body = encode(request);
+        cJSON_Delete(request);
+        std::string response;
+        int statusCode = 0;
+        const bool posted = _post(connection, body, response, statusCode,
+                                  "/api/v1/device/history-backfill");
+        _historyBackfillHttpStatus.store(statusCode);
+        cJSON* result = posted ? cJSON_Parse(response.c_str()) : nullptr;
+        cJSON* ok = result ? cJSON_GetObjectItemCaseSensitive(result, "ok") : nullptr;
+        cJSON* accepted = result ? cJSON_GetObjectItemCaseSensitive(result, "acceptedDays") : nullptr;
+        const bool acknowledged = cJSON_IsTrue(ok) && cJSON_IsNumber(accepted) &&
+            accepted->valuedouble == dayCount;
+        cJSON_Delete(result);
+        if (!acknowledged) {
+            _historyBackfillState.store(CloudHistoryBackfillState::RETRYING);
+            return false;
+        }
+    }
+
+    xSemaphoreTake(_historyBackfillMutex, portMAX_DELAY);
+    const bool saved = _saveHistoryBackfillProgress(true, month.c_str());
+    if (saved) {
+        std::strncpy(_historyBackfillCursor, month.c_str(), sizeof(_historyBackfillCursor) - 1);
+        _historyBackfillUploadedDays.fetch_add(dayCount);
+        _historyBackfillState.store(CloudHistoryBackfillState::QUEUED);
+    } else {
+        _historyBackfillState.store(CloudHistoryBackfillState::RETRYING);
+    }
+    xSemaphoreGive(_historyBackfillMutex);
+    return saved;
 }
 
 bool CloudSyncClient::_applyResponse(const std::string& response, uint64_t maxSentSequence) {

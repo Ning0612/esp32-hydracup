@@ -35,7 +35,7 @@ HydraCup 以 PlatformIO + ESP-IDF 5.x 的 native FreeRTOS runtime 運行，分�
 │                                                        │
 │  hydracup_service (50 ms): WiFi / MQTT / health        │
 │  esp_http_server task: DashboardServer                 │
-│  workers: MQTT / Discord / EventLogger / counter NVS   │
+│  workers: MQTT / Discord / EventLogger / CloudSync / NVS│
 └────────────────────────────────────────────────────────┘
 ```
 
@@ -67,7 +67,7 @@ HydraCup 以 PlatformIO + ESP-IDF 5.x 的 native FreeRTOS runtime 運行，分�
 | `DrinkDetector` | ESP32 adapter：對接 ScaleManager、AppState、每日計數器與通知管道 |
 | `ReminderCore` | framework-independent 主動時間狀態機；穩定放杯才計時，杯子離開即暫停 |
 | `ReminderManager` | 驅動 ReminderCore 與蜂鳴器；只有確認喝水才重新計時 |
-| `CloudSyncClient` | LittleFS durable outbox、HTTPS 批次同步、command ACK 與配對碼 |
+| `CloudSyncClient` | LittleFS durable outbox、HTTPS 批次同步、command ACK、配對碼與可續傳歷史補傳 |
 | `BuzzerController` | LEDC PWM 非阻塞蜂鳴佇列（7 種模式） |
 | `DisplayManager` | SSD1306 OLED 輪播（2 頁，各 4 秒），自動睡眠 |
 | `DiscordNotifier` | 非同步 HTTPS POST 至 Discord Webhook |

@@ -24,6 +24,14 @@ enum class CloudCommandType : uint8_t {
     UNKNOWN
 };
 
+enum class CloudHistoryBackfillState : uint8_t {
+    IDLE,
+    QUEUED,
+    UPLOADING,
+    RETRYING,
+    COMPLETE
+};
+
 struct CloudCommand {
     char id[48] = {};
     CloudCommandType type = CloudCommandType::UNKNOWN;
@@ -78,6 +86,11 @@ public:
     uint32_t droppedEvents() const { return _droppedEvents.load(); }
     std::string pairingCode() const;
     std::string tokenHash() const;
+    bool requestHistoryBackfill();
+    bool historyBackfillRunning() const { return _historyBackfillActive.load(); }
+    const char* historyBackfillState() const;
+    uint32_t historyBackfillUploadedDays() const { return _historyBackfillUploadedDays.load(); }
+    int historyBackfillHttpStatus() const { return _historyBackfillHttpStatus.load(); }
 
 private:
     struct EventMessage {
@@ -109,9 +122,17 @@ private:
 
     struct ConnectionConfig {
         bool enabled = false;
+        int32_t timezoneOffsetSec = 0;
         char baseUrl[192] = {};
         char deviceId[64] = {};
         char token[65] = {};
+    };
+
+    struct HistoryDay {
+        char localDate[11] = {};
+        float totalMl = 0.0f;
+        uint32_t drinkCount = 0;
+        char lastDrinkAt[41] = {};
     };
 
     static void _taskFunc(void* param);
@@ -123,7 +144,14 @@ private:
     bool _saveOverflowStore(const OverflowStore& store);
     bool _syncOnce();
     bool _post(const ConnectionConfig& config, const std::string& body,
-               std::string& response, int& statusCode);
+               std::string& response, int& statusCode, const char* path);
+    bool _historyBackfillOnce();
+    bool _nextHistoryMonth(const char* afterMonth, std::string& month);
+    bool _buildHistoryBatch(const std::string& month, const char* today,
+                            HistoryDay* days, uint8_t& dayCount);
+    bool _loadHistoryBackfillProgress();
+    bool _saveHistoryBackfillProgress(bool active, const char* cursorMonth);
+    std::string _historyBackfillIdentity() const;
     bool _applyResponse(const std::string& response, uint64_t maxSentSequence);
     bool _rewriteOutbox(uint64_t ackedThroughSeq);
     void _recoverOutbox();
@@ -152,6 +180,7 @@ private:
     SemaphoreHandle_t _configMutex = nullptr;
     SemaphoreHandle_t _commandMutex = nullptr;
     SemaphoreHandle_t _overflowMutex = nullptr;
+    SemaphoreHandle_t _historyBackfillMutex = nullptr;
     TaskHandle_t _task = nullptr;
     CloudDeviceStatus _status;
     ConnectionConfig _connection;
@@ -174,4 +203,10 @@ private:
     std::atomic<uint32_t> _lastSyncMs{0};
     std::atomic<int> _lastHttpStatus{0};
     std::atomic<uint32_t> _droppedEvents{0};
+    std::atomic<bool> _historyBackfillActive{false};
+    std::atomic<CloudHistoryBackfillState> _historyBackfillState{CloudHistoryBackfillState::IDLE};
+    std::atomic<uint32_t> _historyBackfillUploadedDays{0};
+    std::atomic<int> _historyBackfillHttpStatus{0};
+    char _historyBackfillCursor[8] = {};
+    char _historyBackfillIdentityTag[65] = {};
 };

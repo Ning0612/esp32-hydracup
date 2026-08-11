@@ -119,6 +119,10 @@ HydraCup Service。ESP32 仍是飲水事件與提醒狀態的唯一真實來源�
 | Device ID | `cloudDeviceId` | 首次啟動由裝置依 MAC 產生；WebUI 唯讀顯示 |
 | Device token SHA-256 | `cloudDeviceTokenHash` | 供 Cloudflare allowlist 使用；不是 raw token，WebUI 唯讀顯示 |
 
+Service v1 的日期邊界固定為 Asia/Taipei，因此啟用 Cloud sync 時裝置時區必須是 `UTC+8`；
+其他時區會被設定 API 拒絕，既有非 UTC+8 設定也不會開始同步。這可確保即時事件、Local
+月檔與 LIFF 熱力圖使用同一天界。
+
 WebUI 與 `POST /api/config` 都會移除 Service URL 前後空白與結尾斜線，並只接受純 HTTPS
 origin。不可附加 `/api/v1/device/sync`、其他 path、query、fragment 或帳密；不合法值會在
 套用其他設定前回傳 `400`。背景 worker 每 15 秒同步一次；新事件或 command ACK 會要求
@@ -137,6 +141,18 @@ origin。不可附加 `/api/v1/device/sync`、其他 path、query、fragment 或
 
 Raw device token 只存在 ESP32 NVS，不會顯示在 WebUI，也不應放入 Cloudflare、repo、文件
 或訊息。Device Console 目前使用 LAN HTTP，請只在信任的隔離網路操作。
+
+### 補傳 Local 歷史到 LIFF
+
+Cloud sync 已正常連線後，在設定頁「06 Cloud sync」按「開始補傳」。背景 worker 每批處理
+一個月份，把 LittleFS 中今天以前的每日摘要送往 `/api/v1/device/history-backfill`；原始
+token 不會交給瀏覽器。service 確認後才持久化 `hist_cursor`，所以離線、5xx 或重開機後會
+重送相同月份，不會跳過資料，也不會重複累加。完成後可再次執行，補上前次執行時仍屬今日
+的資料。游標會綁定 Service origin 與裝置身分；身分變更後從頭安全重送。月檔以短批次
+持有 filesystem lock、在鎖外解析，避免阻塞新的飲水日誌。
+
+狀態為 `retrying` 時裝置每 15 秒自動重試。HTTP 400 通常表示 firmware 與 service 協定
+版本不一致；401 是裝置身分不符；410 是雲端帳號刪除後的停用 tombstone。
 
 ---
 

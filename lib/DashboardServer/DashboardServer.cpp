@@ -170,6 +170,14 @@ esp_err_t DashboardServer::_handleGet(httpd_req_t* request) {
         cJSON_AddNumberToObject(doc, "cloud_last_sync_age_sec", _cloudSync ? _cloudSync->lastSyncAgeSec() : 0);
         cJSON_AddNumberToObject(doc, "cloud_last_http_status", _cloudSync ? _cloudSync->lastHttpStatus() : 0);
         cJSON_AddNumberToObject(doc, "cloud_queue_drops", _cloudSync ? _cloudSync->droppedEvents() : 0);
+        cJSON_AddStringToObject(doc, "cloud_history_backfill_state",
+                                _cloudSync ? _cloudSync->historyBackfillState() : "idle");
+        cJSON_AddBoolToObject(doc, "cloud_history_backfill_running",
+                              _cloudSync && _cloudSync->historyBackfillRunning());
+        cJSON_AddNumberToObject(doc, "cloud_history_backfill_uploaded_days",
+                                _cloudSync ? _cloudSync->historyBackfillUploadedDays() : 0);
+        cJSON_AddNumberToObject(doc, "cloud_history_backfill_http_status",
+                                _cloudSync ? _cloudSync->historyBackfillHttpStatus() : 0);
         const std::string pairingCode = _cloudSync ? _cloudSync->pairingCode() : "";
         cJSON_AddStringToObject(doc, "cloud_pairing_code", pairingCode.c_str());
         cJSON_AddBoolToObject(doc, "webhook_configured", _state->webhookConfigured);
@@ -251,6 +259,13 @@ esp_err_t DashboardServer::_handlePost(httpd_req_t* request) {
     }
     if (uri == "/api/auth/logout") { if (!_requireApiAuth(request, true)) return ESP_OK; _clearSession(); httpd_resp_set_hdr(request, "Set-Cookie", "session=; Max-Age=0; Path=/; HttpOnly; SameSite=Strict"); _sendJson(request, "{\"ok\":true}"); return ESP_OK; }
     if (uri == "/api/reboot") { if (!_requireApiAuth(request, true)) return ESP_OK; _sendJson(request, "{\"ok\":true}"); http_restart_after_response(); return ESP_OK; }
+    if (uri == "/api/cloud/history-backfill") {
+        if (!_requireApiAuth(request, true)) return ESP_OK;
+        if (!_logFsOk) { _sendJson(request, "{\"ok\":false,\"error\":\"logfs_unavailable\"}", 503); return ESP_OK; }
+        if (!_cloudSync || !_cloudSync->isConfigured()) { _sendJson(request, "{\"ok\":false,\"error\":\"cloud_not_configured\"}", 409); return ESP_OK; }
+        if (!_cloudSync->requestHistoryBackfill()) { _sendJson(request, "{\"ok\":false,\"error\":\"history_backfill_queue_failed\"}", 503); return ESP_OK; }
+        _sendJson(request, "{\"ok\":true,\"state\":\"queued\"}", 202); return ESP_OK;
+    }
     if (uri == "/api/tare") {
         if (!_requireApiAuth(request, true)) return ESP_OK;
         ControlResult result;
@@ -282,6 +297,19 @@ esp_err_t DashboardServer::_handlePost(httpd_req_t* request) {
             ? normalizedCloudOrigin : _cfg->cloudBaseUrl;
         if (cloudWillBeEnabled && cloudOriginAfterUpdate.empty()) {
             cJSON_Delete(doc); _sendJson(request, "{\"ok\":false,\"error\":\"cloudBaseUrl is required when cloud sync is enabled\"}", 400); return ESP_OK;
+        }
+        const int timezoneAfterUpdate = number(doc, "timezoneOffsetSec")
+            ? static_cast<int>(std::clamp(cJSON_GetObjectItem(doc, "timezoneOffsetSec")->valuedouble,
+                                          -43200.0, 50400.0))
+            : _cfg->timezoneOffsetSec;
+        if (cloudWillBeEnabled && timezoneAfterUpdate + _cfg->daylightOffsetSec != 8 * 3600) {
+            cJSON_Delete(doc); _sendJson(request, "{\"ok\":false,\"error\":\"cloud sync requires UTC+8 timezone\"}", 400); return ESP_OK;
+        }
+        const bool cloudConnectionWillChange =
+            (boolean(doc, "cloudEnabled") && cloudWillBeEnabled != _cfg->cloudEnabled) ||
+            (has(doc, "cloudBaseUrl") && cloudOriginAfterUpdate != _cfg->cloudBaseUrl);
+        if (cloudConnectionWillChange && _cloudSync && _cloudSync->historyBackfillRunning()) {
+            cJSON_Delete(doc); _sendJson(request, "{\"ok\":false,\"error\":\"history_backfill_in_progress\"}", 409); return ESP_OK;
         }
         const RuntimeSnapshot live = _runtime ? _runtime->snapshot() : RuntimeSnapshot{};
         if (_runtime && _runtime->isControlRunning()) {
