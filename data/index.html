@@ -42,20 +42,28 @@
 
   <div class="feature-grid">
     <section class="card"><h2><span>01</span>杯重與杯況</h2><div class="label">即時重量</div><div class="num-xl" id="wt">-- g</div><span class="state-chip" id="st">等待資料</span><p class="info">數值每 2 秒更新一次；重量穩定後會判斷飲水事件。</p></section>
-    <section class="card"><h2><span>02</span>今日進度</h2><div class="label">今日飲水量</div><div class="num-xl"><span id="today">0</span><span style="font-size:.3em;letter-spacing:0"> ml</span></div><div class="progress-bg"><div class="progress-fill" id="bar" style="width:0%"></div></div><div class="sub" id="pct">0% / 目標 -- ml（0 次）</div></section>
+    <section class="card local-today-card"><h2><span>02</span>今日進度</h2>
+      <div class="local-progress-gauge" id="today-gauge" style="--level:0%" role="img" aria-label="今日已喝 0 ml，達成 0%">
+        <div class="local-progress-water"><i></i><i></i></div>
+        <div class="local-progress-copy"><strong id="today">0</strong><span>ml</span><small id="today-pct">0%</small></div>
+      </div>
+      <p class="local-goal-line"><span id="today-goal">目標 -- ml</span><i></i><span id="today-count">0 次飲水</span></p>
+    </section>
   </div>
 
   <div class="split-grid">
-    <section class="card"><h2><span>03</span>提醒節奏</h2><div class="metric-grid compact-grid"><div class="metric"><label>上次喝水</label><span id="last">--</span></div><div class="metric"><label>下次提醒</label><span id="next">--</span></div></div></section>
-    <section class="card"><h2><span>04</span>裝置狀態</h2>
-      <div class="status-row"><div class="dot" id="d-ntp"></div><span class="status-label">NTP 時間同步</span><span class="status-val" id="v-ntp">--</span></div>
-      <div class="status-row"><div class="dot" id="d-wh"></div><span class="status-label">Discord 通知</span><span class="status-val" id="v-wh">--</span></div>
-      <div class="status-row"><div class="dot" id="d-mq"></div><span class="status-label">MQTT 連線</span><span class="status-val" id="v-mq">--</span></div>
-      <div class="status-row"><div class="dot" id="d-cl"></div><span class="status-label">Cloud sync</span><span class="status-val" id="v-cl">--</span></div>
-      <div class="status-row"><div class="dot" id="d-pair"></div><span class="status-label">WebUI 配對碼</span><span class="status-val" id="v-pair">等待同步</span></div>
-      <div class="status-row"><div class="dot" id="d-hx"></div><span class="status-label">HX711 感測器</span><span class="status-val" id="v-hx">--</span></div>
-      <div class="status-row"><div class="dot" id="d-ol"></div><span class="status-label">OLED 顯示屏</span><span class="status-val" id="v-ol">--</span></div>
+    <section class="card device-status-card"><h2><span>03</span>裝置狀態</h2>
+      <div class="device-status-grid">
+        <div class="status-row"><div class="dot" id="d-ntp"></div><span class="status-label">NTP 時間同步</span><span class="status-val" id="v-ntp">--</span></div>
+        <div class="status-row"><div class="dot" id="d-wh"></div><span class="status-label">Discord 通知</span><span class="status-val" id="v-wh">--</span></div>
+        <div class="status-row"><div class="dot" id="d-mq"></div><span class="status-label">MQTT 連線</span><span class="status-val" id="v-mq">--</span></div>
+        <div class="status-row"><div class="dot" id="d-cl"></div><span class="status-label">Cloud sync</span><span class="status-val" id="v-cl">--</span></div>
+        <div class="status-row"><div class="dot" id="d-pair"></div><span class="status-label">WebUI 配對碼</span><span class="status-val" id="v-pair">等待同步</span></div>
+        <div class="status-row"><div class="dot" id="d-hx"></div><span class="status-label">HX711 感測器</span><span class="status-val" id="v-hx">--</span></div>
+        <div class="status-row"><div class="dot" id="d-ol"></div><span class="status-label">OLED 顯示屏</span><span class="status-val" id="v-ol">--</span></div>
+      </div>
     </section>
+    <section class="card local-rhythm-card"><h2><span>04</span>提醒節奏</h2><div class="metric-grid compact-grid"><div class="metric"><label>上次喝水</label><span id="last">--</span></div><div class="metric"><label>下次提醒</label><span id="next">--</span></div></div></section>
   </div>
 </main>
 
@@ -84,7 +92,7 @@ function update(d) {
   document.getElementById('cup-visual').className = 'local-cup-visual state-' + (d.cup_state_name || 'off');
   setVal('wt', d.weight_g != null ? Math.round(d.weight_g) + ' g' : '-- g'); setVal('st', state); setVal('hero-state', state); setVal('hero-detail', STATE_DETAILS[d.cup_state_name] || '正在等待下一筆裝置狀態。');
   const t = d.today_total_ml || 0, g = d.daily_goal_ml || 2000, p = g > 0 ? Math.min(100, Math.round(t * 100 / g)) : 0;
-  setVal('today', Math.round(t)); const bar = document.getElementById('bar'); bar.style.width = p + '%'; bar.className = 'progress-fill' + (p >= 100 ? ' done' : ''); setVal('pct', p + '% / 目標 ' + g + ' ml（' + (d.drink_count_today || 0) + ' 次）');
+  const count = d.drink_count_today || 0; setVal('today', Math.round(t)); setVal('today-pct', p + '%'); setVal('today-goal', '目標 ' + g + ' ml'); setVal('today-count', count + ' 次飲水'); const gauge = document.getElementById('today-gauge'); gauge.style.setProperty('--level', p + '%'); gauge.classList.toggle('done', p >= 100); gauge.setAttribute('aria-label', '今日已喝 ' + Math.round(t) + ' ml，達成 ' + p + '%');
   setVal('last', d.last_drink_ml > 0 ? Math.round(d.last_drink_ml) + ' ml' : '--'); const s = d.next_reminder_sec || 0; const rs = d.reminder_state || ''; const reminderPaused = ['waiting_for_cup', 'paused_cup_away', 'paused_today', 'disabled'].includes(rs); setVal('next', !reminderPaused && s > 0 ? (s >= 60 ? Math.ceil(s / 60) + ' 分鐘後' : s + ' 秒後') : (REMINDER_NAMES[rs] || '--'));
   setVal('updated-at', new Date().toLocaleTimeString('zh-TW', { hour12:false })); document.getElementById('connection-msg').style.display = 'none';
   setDot('d-ntp', d.ntp_synced ? 'ok' : 'warn'); setVal('v-ntp', d.ntp_synced ? '已同步' : '未同步');

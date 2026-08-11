@@ -94,7 +94,7 @@ LINE Login／Messaging API channel。完整的使用與配對流程見
    `/api/v1/device/sync`，也不要在前後留下空白
 4. 核對唯讀的 Device ID 與 Device token SHA-256 已和 Cloudflare production allowlist 一致
 5. 儲存設定並依提示重新啟動裝置
-6. 回到裝置首頁「04 裝置狀態」，等待 Cloud sync 顯示 `正常 · 待送 0`，HTTP 顯示 `200`
+6. 回到裝置首頁「03 裝置狀態」，等待 Cloud sync 顯示 `正常 · 待送 0`，HTTP 顯示 `200`
 7. 同一區的「WebUI 配對碼」會顯示 8 碼、10 分鐘有效的配對碼；完成 LINE 配對後該碼會消失
 
 配對碼只顯示於登入後的本機 Device Console，不會顯示在 OLED。請勿分享管理密碼、

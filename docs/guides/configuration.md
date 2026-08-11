@@ -122,7 +122,7 @@ HydraCup Service。ESP32 仍是飲水事件與提醒狀態的唯一真實來源�
 WebUI 與 `POST /api/config` 都會移除 Service URL 前後空白與結尾斜線，並只接受純 HTTPS
 origin。不可附加 `/api/v1/device/sync`、其他 path、query、fragment 或帳密；不合法值會在
 套用其他設定前回傳 `400`。背景 worker 每 15 秒同步一次；新事件或 command ACK 會要求
-提早同步。登入後的裝置首頁「04 裝置狀態」會顯示：
+提早同步。登入後的裝置首頁「03 裝置狀態」會顯示：
 
 - `正常 · 待送 0`／HTTP `200`：最近一次同步成功，durable outbox 已送完。
 - `待送 N`：尚有事件等待 server ACK；短暫離線時屬正常現象。
