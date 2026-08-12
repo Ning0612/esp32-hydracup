@@ -73,6 +73,7 @@ HydraCup 以 PlatformIO + ESP-IDF 5.x 的 native FreeRTOS runtime 運行，分�
 | `DiscordNotifier` | 非同步 HTTPS POST 至 Discord Webhook |
 | `EventLogger` | LittleFS JSONL 飲水事件日誌（依月份分檔） |
 | `OtaUpdater` | GitHub Releases 版本檢查與 `esp_https_ota` 韌體寫入；含開機確認與 rollback |
+| `HistoryMaintenance` | 飲水紀錄清除：WebUI 只記錄要求，實際清除在下次開機、掛載前執行 |
 | `TimeManager` | NTP 時間同步；提供 ISO-8601 時戳 |
 | `DailySummaryManager` | 每日午夜聚合統計並送出 Discord 摘要 |
 | `RuntimeCoordinator` | 一致 runtime snapshot、control command/result Queue |
@@ -89,6 +90,7 @@ HydraCup 以 PlatformIO + ESP-IDF 5.x 的 native FreeRTOS runtime 運行，分�
 1. `app_main()` 開始，ESP-IDF logging 以 115200 baud 輸出
 2. `nvs_flash_init()`             → NVS 設定與計數器
 2b. `ota_boot_check()`            → 記錄本次映像是否待確認（兩種模式都執行）
+2c. `history_apply_pending_clear()` → 有待處理的清除要求時，在掛載前格式化 logfs 並清空計數
 3. `esp_vfs_littlefs_register()`  → `/webfs` 與 `/logfs`
 4. `ConfigManager.load(cfg)`      → 從 NVS 讀取設定
 5. `DisplayManager.init()`        → 失敗則記錄並繼續

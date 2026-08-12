@@ -160,6 +160,14 @@
     <div class="section-title">步驟 2 / 已知重量</div><div class="field"><label for="known-w">已知重量（g）</label><input type="number" id="known-w" min="1" max="5000" step="0.1" placeholder="例如 500"></div><div class="actions"><button class="btn btn-primary" type="button" onclick="doCalibrate()">完成校正</button></div><div class="msg" id="cal-msg"></div>
     <div class="card" id="cal-result" style="display:none;margin-top:1rem"><div class="label">校正結果</div><div id="cal-result-body" style="font-size:.88em;line-height:2;color:var(--muted)"></div></div>
 </section>
+
+  <hr class="divider">
+  <section id="clear-history" class="card danger-card"><h2><span>10</span>清除飲水紀錄</h2>
+    <p class="section-note">刪除裝置上所有飲水月檔與尚未上傳的同步佇列，並將今日累計與飲水次數歸零。<strong>此操作無法復原</strong>。裝置會重新啟動以完成清除——清除在開機時進行，此時沒有任何程序正在寫入紀錄。已同步到雲端的資料、校正值、WiFi 與其他設定都不受影響。</p>
+    <div class="field"><label for="clear-pw">請再次輸入管理密碼以確認</label><input type="password" id="clear-pw" autocomplete="current-password" placeholder="管理密碼"></div>
+    <div class="actions"><button class="btn btn-danger" type="button" onclick="clearHistory()">清除並重新啟動</button></div>
+    <output id="clear-msg" aria-live="polite"></output>
+  </section>
 </main>
 
 <footer class="site-footer"><div class="footer-in">
@@ -481,6 +489,29 @@ function postOta(path, pending) {
     document.getElementById('ota-status').textContent = '要求失敗：' + error.message;
     refreshOta();
   });
+}
+
+const CLEAR_ERRORS = {
+  invalid_credentials: '密碼不正確。',
+  rate_limited: '嘗試次數過多，請稍後再試。',
+  request_not_stored: '無法記錄清除要求，請再試一次。'
+};
+
+function clearHistory() {
+  const input = document.getElementById('clear-pw');
+  const output = document.getElementById('clear-msg');
+  if (!input.value) { output.textContent = '請先輸入管理密碼。'; input.focus(); return; }
+  if (!confirm('確定要清除所有飲水紀錄？裝置會重新啟動，且無法復原。')) return;
+  output.textContent = '正在確認…';
+  hydraFetch('/api/logs/clear', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ password: input.value })
+  }).then(async response => {
+    const data = await response.json();
+    if (!response.ok || !data.ok) throw new Error(CLEAR_ERRORS[data.error] || ('HTTP ' + response.status));
+    input.value = '';
+    output.textContent = '裝置正在重新啟動，紀錄會在開機時清除。請稍候重新整理。';
+  }).catch(error => { output.textContent = '清除失敗：' + error.message; });
 }
 
 function checkFirmware() { postOta('/api/ota/check', '正在查詢最新版本…'); }
