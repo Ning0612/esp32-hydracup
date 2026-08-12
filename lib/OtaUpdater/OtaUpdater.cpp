@@ -27,10 +27,12 @@ namespace {
 
 constexpr const char* TAG = "Ota";
 
-// ESP-IDF sizes task stacks in bytes, unlike vanilla FreeRTOS. 10 KB matches the
-// cloud_sync task, which already runs a full mbedtls session plus file IO; the OTA
-// path is shallower because esp_ota_write() sits directly on spi_flash.
-constexpr uint32_t OTA_TASK_STACK_BYTES = 10240;
+// ESP-IDF sizes task stacks in bytes, unlike vanilla FreeRTOS. 16 KB matches the sister
+// project's OTA worker, which does strictly less on it: one TLS session for the firmware.
+// This task runs a second one for the web assets right after the first is torn down, and an
+// mbedtls handshake is the deepest point in the whole flow. The earlier 10 KB was sized
+// against cloud_sync, which is not comparable - it never stacks two sessions in one task.
+constexpr uint32_t OTA_TASK_STACK_BYTES = 16384;
 constexpr UBaseType_t OTA_TASK_PRIORITY = 3;  // below httpd (5) so /api/ota/status stays responsive
 constexpr BaseType_t OTA_TASK_CORE = 0;       // WiFi/lwip core; hydracup_control owns core 1
 
@@ -613,6 +615,11 @@ bool OtaUpdater::_updateWebfs(const char* expectedSha) {
         _setMessage("無法建立連線，略過網頁資源更新");
         return false;
     }
+    // Step markers: this runs immediately after the firmware download and its restart, so a
+    // crash here leaves nothing behind - the persisted outcome is written later and a serial
+    // capture is the only way to see how far it got.
+    LOG_INFO(TAG, "webfs: client ready, stack_free=%u",
+             static_cast<unsigned>(uxTaskGetStackHighWaterMark(nullptr)));
 
     bool ok = false;
     bool unmounted = false;
@@ -635,6 +642,8 @@ bool OtaUpdater::_updateWebfs(const char* expectedSha) {
             opened = true;
             contentLength = esp_http_client_fetch_headers(client);
             status = esp_http_client_get_status_code(client);
+            LOG_INFO(TAG, "webfs: hop=%d status=%d length=%d stack_free=%u", hop, status,
+                     contentLength, static_cast<unsigned>(uxTaskGetStackHighWaterMark(nullptr)));
             if (status != 301 && status != 302 && status != 303 && status != 307 && status != 308) break;
             if (hop == OTA_MAX_REDIRECTS) {
                 _setMessage("網頁資源轉址次數過多（%d 次）", hop);
@@ -669,6 +678,7 @@ bool OtaUpdater::_updateWebfs(const char* expectedSha) {
         if (g_webfsMutex) xSemaphoreGive(g_webfsMutex);
         esp_vfs_littlefs_unregister(OTA_WEBFS_LABEL);
         unmounted = true;
+        LOG_INFO(TAG, "webfs: unmounted, streaming %d bytes", contentLength);
 
         // Erase in step with the writes rather than all 384 KB up front. A full erase takes
         // seconds and disables the flash cache in bursts while it runs, and lwIP executes

@@ -248,7 +248,10 @@ void serviceTask(void*) {
 
 extern "C" void app_main(void) {
     esp_log_level_set("HydraCup", ESP_LOG_INFO);
-    LOG_INFO(TAG, "HydraCup v%s booting (ESP-IDF)", APP_VERSION);
+    // Tells a deliberate esp_restart() apart from a panic or watchdog reset, which otherwise
+    // look identical from outside: the device simply reappears on a new firmware version.
+    LOG_INFO(TAG, "HydraCup v%s booting (ESP-IDF), reset reason=%d", APP_VERSION,
+             static_cast<int>(esp_reset_reason()));
     const esp_err_t nvsResult = nvs_flash_init();
     if (nvsResult != ESP_OK) { LOG_ERROR(TAG, "NVS init failed: %s", esp_err_to_name(nvsResult)); return; }
     ota_boot_check();
