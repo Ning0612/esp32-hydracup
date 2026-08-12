@@ -323,6 +323,11 @@ esp_err_t DashboardServer::_handlePost(httpd_req_t* request) {
             _recordAuthFailure(ip);
             _sendJson(request, "{\"ok\":false,\"error\":\"invalid_credentials\"}", 401); return ESP_OK;
         }
+        // A backfill would keep uploading and advancing its cursor during the moment between
+        // this reply and the restart, against history that is about to disappear.
+        if (_cloudSync && _cloudSync->historyBackfillRunning()) {
+            _sendJson(request, "{\"ok\":false,\"error\":\"history_backfill_in_progress\"}", 409); return ESP_OK;
+        }
         // Only records the request; the wipe itself runs on the next boot, where nothing is
         // writing to the data being erased. See lib/HistoryMaintenance.
         if (!history_request_clear()) {

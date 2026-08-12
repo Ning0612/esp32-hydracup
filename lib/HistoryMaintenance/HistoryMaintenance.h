@@ -20,4 +20,7 @@ bool history_request_clear();
 
 // Performs a pending clear. Call once during startup, after NVS is available and before the
 // filesystems are mounted. Does nothing when no clear is pending.
+//
+// The NVS counters are erased before logfs is formatted, so the irreversible step runs last:
+// a failure before it leaves everything intact, and the request survives for the next boot.
 void history_apply_pending_clear();
