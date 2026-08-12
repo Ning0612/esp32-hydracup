@@ -1,8 +1,22 @@
-CONFIG_COMPILER_CXX_EXCEPTIONS=y
-CONFIG_COMPILER_CXX_RTTI=y
+CONFIG_COMPILER_OPTIMIZATION_SIZE=y
+CONFIG_COMPILER_CXX_EXCEPTIONS=n
+CONFIG_COMPILER_CXX_RTTI=n
 CONFIG_FREERTOS_UNICORE=n
 CONFIG_ESPTOOLPY_FLASHSIZE_4MB=y
 CONFIG_LOG_DEFAULT_LEVEL_INFO=y
 CONFIG_HTTPD_MAX_REQ_HDR_LEN=1024
 CONFIG_HTTPD_MAX_URI_LEN=256
-CONFIG_MBEDTLS_CERTIFICATE_BUNDLE=n
+# OTA cannot pin a root CA: GitHub redirects release assets to objects.githubusercontent.com
+# and rotates both chains, and a stale pin would break the only channel able to ship the fix.
+# The CMN subset (41 roots, ~18 KB) covers DigiCert, Sectigo, ISRG, Amazon and GTS; the full
+# bundle is 67 KB. CloudSyncClient and DiscordNotifier keep their pinned PEMs.
+CONFIG_MBEDTLS_CERTIFICATE_BUNDLE=y
+CONFIG_MBEDTLS_CERTIFICATE_BUNDLE_DEFAULT_CMN=y
+# OTA downloads follow a GitHub 302 redirect to objects.githubusercontent.com and need
+# 2-3 concurrent connections. The default budget of 10 cannot cover that alongside httpd
+# (5, set explicitly in DashboardServer), MQTT and cloud sync.
+CONFIG_LWIP_MAX_SOCKETS=16
+# Rollback lives in the bootloader, so enabling it requires a USB flash - which the first
+# OTA-capable build needs anyway. src/main.cpp confirms each boot via
+# ota_mark_app_valid_if_due() once the control task has been beating for 30 s.
+CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE=y

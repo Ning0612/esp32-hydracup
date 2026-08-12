@@ -5,5 +5,8 @@ compile_commands.json
 CLAUDE.md
 AGENTS.md
 managed_components/
+__pycache__/
 sdkconfig.*
 !sdkconfig.defaults
+!sdkconfig.debug.defaults
+.serena/
