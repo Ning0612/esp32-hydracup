@@ -10,3 +10,4 @@ sdkconfig.*
 !sdkconfig.defaults
 !sdkconfig.debug.defaults
 .serena/
+.playwright-mcp/
