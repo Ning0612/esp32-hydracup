@@ -28,6 +28,20 @@ jobs:
       - name: Build firmware
         run: pio run -e esp32dev
 
+      # OTA writes the image into the 1,310,720-byte app slot, so the firmware has to keep
+      # fitting one. Failing here beats discovering it when a release will not install.
+      - name: Check firmware fits the OTA app slot
+        run: |
+          size=$(stat -c%s .pio/build/esp32dev/firmware.bin)
+          echo "firmware.bin = ${size} bytes ($((size * 100 / 1310720))% of the app slot)"
+          if [ "$size" -gt 1205862 ]; then
+            echo "::error::firmware.bin exceeds 92% of the 1,310,720-byte app slot"
+            exit 1
+          fi
+          if [ "$size" -gt 1179648 ]; then
+            echo "::warning::firmware.bin is over 90% of the app slot"
+          fi
+
   native-tests:
     name: Native host-side tests
     runs-on: ubuntu-latest

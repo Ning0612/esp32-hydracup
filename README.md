@@ -92,6 +92,7 @@ The local dashboard is served by the ESP32 at `http://<device-ip>`. The current 
 - **OLED display** — 2-page rotating status display with auto-sleep
 - **Cup-aware reminders** — counts only while a stable cup is present; a confirmed drink restarts the interval
 - **Durable cloud sync** — LittleFS outbox with ACK-based replay plus resumable daily-history backfill for the separate LINE/LIFF WebUI service
+- **OTA firmware updates** — check and install from GitHub Releases in the Device Console, with bootloader rollback if the new image fails to come up
 - **Captive config portal** — WiFi setup at `192.168.4.1` on first boot (no app needed)
 - **FreeRTOS control isolation** — scale/detection/reminder/display run in one high-priority control task; network operations stay in background workers
 - **Non-blocking tare and workers** — tare is sample-driven; Discord, MQTT and drink logging use persistent/background workers
@@ -176,6 +177,9 @@ See [docs/guides/getting-started.md](docs/guides/getting-started.md) for the com
 | POST | `/api/calibrate` | Calibrate with known weight |
 | GET | `/api/logs?month=YYYY-MM` | Drink history |
 | POST | `/api/cloud/history-backfill` | Start resumable Local-history backfill |
+| GET | `/api/ota/status` | Firmware update state, progress and version |
+| POST | `/api/ota/check` | Check GitHub Releases for a newer firmware |
+| POST | `/api/ota/update` | Download and install the newer firmware |
 | GET | `/api/wifi/scan` | Scan nearby networks |
 | POST | `/api/reboot` | Reboot device |
 

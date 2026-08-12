@@ -83,13 +83,48 @@ pio run -e esp32dev -v --target uploadfs | Select-String address
 - `logfs` 使用 `format_if_mount_failed = false`；mount 失敗時不會自動格式化或清除資料。
 - 完整 erase 或變更分割區位置可能使 NVS、Web 資源與日誌失效；執行前應先備份需要保留的資料。
 
+## OTA 韌體更新
+
+v0.6.0 起，Normal Mode 可從 GitHub Releases 直接更新韌體（設定頁「08 韌體更新」，
+API 見 `docs/api.md`）。
+
+**首次啟用需要一次 USB 燒錄**，之後才能改用 OTA：
+
+```powershell
+pio run -e esp32dev --target upload     # bootloader + partitions + otadata + firmware
+pio run -e esp32dev --target uploadfs   # webfs（設定頁的韌體更新卡片）
+```
+
+`upload` 這一步不可省略成「只寫 app 分割區」：rollback（`CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE`）
+是 **bootloader** 的行為，只有重燒 bootloader 才會生效。若沒重燒就跑新韌體，開機會把
+`ota_state` 設成 PENDING_VERIFY 而舊 bootloader 不認得——不會變磚，但回滾功能會靜默失效。
+
+**OTA 不會更新 `webfs`。** app slot 之外的分割區都不在 OTA 範圍內，所以設定頁本身改版時
+仍需 `uploadfs`。為了讓舊版 UI 能顯示新韌體的狀態，`/api/ota/status` 的欄位只增不改，
+且所有面向使用者的文字都由韌體回傳。
+
+`sdkconfig.defaults` 中與 OTA 直接相關的設定：
+
+| 設定 | 值 | 原因 |
+|---|---|---|
+| `CONFIG_LWIP_MAX_SOCKETS` | 16 | GitHub 會 302 轉址到 `objects.githubusercontent.com`，下載期間需要 2–3 條連線；預設 10 不夠 |
+| `CONFIG_MBEDTLS_CERTIFICATE_BUNDLE` + `_DEFAULT_CMN` | y | OTA 不能釘選根憑證（見 `docs/architecture.md`）。CMN 子集約 18 KB，全量約 67 KB |
+| `CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE` | y | 新韌體若在 30 秒內崩潰，bootloader 自動回滾到前一個 slot |
+
+> **改 `sdkconfig.defaults` 後必須刪掉 `sdkconfig.esp32dev` 再建置**，否則新值會被既有檔
+> 蓋過而靜默失效。詳見 `CLAUDE.md` 的 Known Environment Constraints。
+
+`[env:esp32dev-debug]` 是同一份韌體以 `-Og` 建置的除錯環境（`scripts/sdkconfig_debug_defaults.py`
+會把 `sdkconfig.debug.defaults` 疊在 `sdkconfig.defaults` 之上）。它**不可用於發佈或 OTA**。
+
 ## ESP-IDF 相依元件
 
 專案不再使用 Arduino `lib_deps`。韌體相依元件由 `src/CMakeLists.txt` 與
 `src/idf_component.yml` 管理，包含：
 
 - ESP-IDF：`driver`、`esp_event`、`esp_netif`、`esp_wifi`、`esp_http_server`、
-  `esp_http_client`、`mqtt`、`nvs_flash`、`json`、`mbedtls`、FreeRTOS 等
+  `esp_http_client`、`esp_https_ota`、`esp-tls`、`app_update`、`mqtt`、`nvs_flash`、
+  `json`、`mbedtls`、FreeRTOS 等
 - registry component：`joltwallet/littlefs`（`>=1.14.6,<2.0.0`）
 
 不要再安裝或新增 `bogde/HX711`、`ArduinoJson`、`Adafruit SSD1306`、`Adafruit GFX`

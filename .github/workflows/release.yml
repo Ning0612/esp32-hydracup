@@ -1,0 +1,80 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*.*.*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Build and publish release assets
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Resolve version from tag
+        id: version
+        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+
+      # Devices compare the running APP_VERSION against version.txt. If the tag and the
+      # header disagree, every device either never updates or tries to "update" backwards.
+      - name: Check version.h matches the tag
+        run: |
+          header=$(sed -n 's/^#define APP_VERSION  *"\(.*\)"/\1/p' include/version.h)
+          echo "tag=${{ steps.version.outputs.version }} version.h=${header}"
+          if [ "$header" != "${{ steps.version.outputs.version }}" ]; then
+            echo "::error::include/version.h says ${header} but the tag is ${{ steps.version.outputs.version }}"
+            exit 1
+          fi
+
+      - name: Check release notes exist
+        run: test -f "docs/releases/${GITHUB_REF_NAME}.md"
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install PlatformIO
+        run: python -m pip install --upgrade platformio
+
+      - name: Run native tests
+        run: pio test -e native
+
+      - name: Build firmware
+        run: pio run -e esp32dev
+
+      - name: Build web filesystem image
+        run: pio run -e esp32dev -t buildfs
+
+      - name: Check firmware fits the OTA app slot
+        run: |
+          size=$(stat -c%s .pio/build/esp32dev/firmware.bin)
+          echo "firmware.bin = ${size} bytes ($((size * 100 / 1310720))% of the app slot)"
+          if [ "$size" -gt 1205862 ]; then
+            echo "::error::firmware.bin exceeds 92% of the 1,310,720-byte app slot"
+            exit 1
+          fi
+
+      # These names are baked into include/config.h on every deployed device. Renaming an
+      # asset breaks updates for devices already in the field, so treat them as frozen.
+      - name: Collect release assets
+        run: |
+          mkdir -p dist
+          echo "${{ steps.version.outputs.version }}" > dist/version.txt
+          cp .pio/build/esp32dev/firmware.bin   dist/hydracup-esp32dev-firmware.bin
+          cp .pio/build/esp32dev/littlefs.bin   dist/hydracup-esp32dev-littlefs.bin
+          cp .pio/build/esp32dev/bootloader.bin dist/hydracup-esp32dev-bootloader.bin
+          cp .pio/build/esp32dev/partitions.bin dist/hydracup-esp32dev-partitions.bin
+          cd dist && sha256sum version.txt hydracup-esp32dev-*.bin > SHA256SUMS
+
+      - name: Publish release
+        uses: softprops/action-gh-release@v2
+        with:
+          body_path: docs/releases/${{ github.ref_name }}.md
+          files: dist/*

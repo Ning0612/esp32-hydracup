@@ -341,6 +341,39 @@ MQTT client 由 ESP-IDF 負責重連；payload 先進入固定大小 queue，再
 
 ---
 
+## OtaUpdater
+
+**職責**：從 GitHub Releases 檢查版本並以 `esp_https_ota` 寫入備用 app slot。
+
+**位置**：`lib/OtaUpdater/`
+
+| 方法 | 說明 |
+|------|------|
+| `init(AppState& state, RuntimeCoordinator& runtime)` | 建立 `ota_worker` task 與同步物件。只在 Normal Mode 呼叫 |
+| `requestCheck()` / `requestUpdate()` | 交給 worker 執行，回傳 `OtaRequestResult`（`ACCEPTED` / `BUSY` / `NO_UPDATE_AVAILABLE` / `INSUFFICIENT_MEMORY` / `OFFLINE`） |
+| `snapshot()` | 以 mutex 一次原子取得 `OtaStatus`，供 `/api/ota/status` 序列化 |
+
+worker task 參數：static stack **10,240 bytes**（不是照抄 paper-frame 的 64 KB——ESP32 classic
+無 PSRAM，且既有 `cloud_sync` task 以同樣大小跑完整 mbedtls TLS 已穩定）、優先權 **3**
+（低於 httpd 的 5，下載期間狀態查詢仍即時）、pin **core 0**、`xTaskCreateStaticPinnedToCore`
+（OTA 期間 heap 最緊，不在此時 malloc）。重入以 `std::atomic<bool>` compare-exchange 擋住。
+
+版本檢查讀 `version.txt` 固定資產而非 `api.github.com`：後者未認證時限 60 req/hr/IP，
+家用 NAT 下多台裝置會撞牆，且需要 8 KB 靜態 buffer 解析 JSON。
+
+**開機確認（獨立於本類別）**：`ota_boot_check()` / `ota_mark_app_valid_if_due(bool)` 是自由
+函式，因為未設定 WiFi 的裝置走 AP Mode、根本不會建立 `OtaUpdater`。若把確認綁在它身上
+（或綁在連線狀態上），那些裝置每次開機都會在 30 秒後被 bootloader 回滾。確認條件只有
+兩項：uptime 滿 `OTA_MARK_VALID_DELAY_MS`，且控制任務心跳正常。
+
+**併發降載**：更新期間 `AppState::otaInProgress` 為 true，各模組自行輪詢降載——控制任務
+跳過 `drinkDetector.update()`（保留 `scaleManager` 讀取，維持重量顯示）、`cloud_sync` 與
+`discord_worker` 暫停（各自的 TLS session 約 40 KB heap）、MQTT 心跳暫停。`esp_ota_write()`
+期間兩顆 core 的 flash cache 會被停用，HX711 的 bit-bang 讀值會失真，寧可漏記也不要記入
+假事件。
+
+---
+
 ## EventLogger
 
 **職責**：將每次飲水事件以 JSONL 格式追加至 logfs 分割區，依月份分檔案。
