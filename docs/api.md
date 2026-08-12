@@ -43,6 +43,27 @@ Normal Mode 下運行，ESP32 連上 WiFi 後提供。
 首次尚未設定管理密碼時，body 必須包含相同的 `password`／`confirm`，且密碼至少 8 個字元；
 已設定密碼時只驗證 `password`。成功後回傳 `session` HttpOnly cookie。
 
+#### `POST /api/auth/password`
+
+需要已登入 session 與 CSRF token，**並在 body 提供目前密碼**——session 本身不足以授權變更
+憑證，再驗一次是為了讓「沒關掉的分頁」無法被轉換成永久存取權。
+
+```json
+{"current": "...", "next": "...", "confirm": "..."}
+```
+
+新密碼至少 8 個字元、最多 128 bytes，且 `next` 與 `confirm` 必須相同（以 constant-time 比對）。
+
+成功後**會結束目前的 session** 並清除 cookie，回傳 `{"ok": true, "state": "reauth_required"}`，
+需以新密碼重新登入。裝置只保留單一 session slot，留著舊 session 等於讓它活得比產生它的憑證還久。
+
+| 狀態 | 錯誤 | 條件 |
+|---|---|---|
+| 401 | `invalid_credentials` | 目前密碼錯誤。失敗計入與登入共用的 IP 鎖定 |
+| 429 | `rate_limited` | 嘗試次數過多 |
+| 400 | `weak_or_mismatched_password` | 新密碼過短、過長或兩次輸入不符 |
+| 500 | `password_persist_failed` | 寫入 NVS 失敗。**舊密碼仍然有效**，不會把裝置鎖死 |
+
 #### `POST /api/auth/logout`
 
 需要已登入 session 與 CSRF token；伺服器端會撤銷唯一有效 session。

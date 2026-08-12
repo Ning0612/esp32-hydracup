@@ -301,6 +301,40 @@ esp_err_t DashboardServer::_handlePost(httpd_req_t* request) {
         _establishSession(); const std::string cookie = "session=" + _sessionToken + "; Path=/; HttpOnly; SameSite=Strict"; httpd_resp_set_hdr(request, "Set-Cookie", cookie.c_str()); _sendJson(request, "{\"ok\":true,\"configured\":true}"); return ESP_OK;
     }
     if (uri == "/api/auth/logout") { if (!_requireApiAuth(request, true)) return ESP_OK; _clearSession(); httpd_resp_set_hdr(request, "Set-Cookie", "session=; Max-Age=0; Path=/; HttpOnly; SameSite=Strict"); _sendJson(request, "{\"ok\":true}"); return ESP_OK; }
+    if (uri == "/api/auth/password") {
+        if (!_requireApiAuth(request, true)) return ESP_OK;
+        // Proving the current password again matters even behind a valid session: it is what
+        // stops an unattended tab from being turned into permanent access.
+        const std::string ip = http_client_ip(request);
+        if (_isRateLimited(ip)) { _sendAuthFailure(request, 429, "rate_limited"); return ESP_OK; }
+        doc = parseBody(request, body);
+        if (!doc) { _sendAuthFailure(request, 400, "invalid_request"); return ESP_OK; }
+        const std::string current = stringValue(doc, "current");
+        const std::string next = stringValue(doc, "next");
+        const std::string confirm = stringValue(doc, "confirm");
+        cJSON_Delete(doc);
+        if (current.empty() || current.size() > 128 || _cfg->adminPasswordHash.empty() ||
+            !http_verify_password_hash(current, _cfg->adminPasswordHash)) {
+            _recordAuthFailure(ip);
+            _sendAuthFailure(request, 401, "invalid_credentials"); return ESP_OK;
+        }
+        if (next.size() < 8 || next.size() > 128 || !http_constant_time_equal(next, confirm)) {
+            _sendAuthFailure(request, 400, "weak_or_mismatched_password"); return ESP_OK;
+        }
+        const std::string previous = _cfg->adminPasswordHash;
+        _cfg->adminPasswordHash = http_create_password_hash(next);
+        if (_cfg->adminPasswordHash.empty() || !_cfgMgr->save(*_cfg)) {
+            // Keep the old password working rather than locking the device out.
+            _cfg->adminPasswordHash = previous;
+            _sendAuthFailure(request, 500, "password_persist_failed"); return ESP_OK;
+        }
+        // Drop the session so the new password has to be used; the device keeps a single
+        // session slot, and leaving the old one live would outlast the credential it came from.
+        _clearSession();
+        httpd_resp_set_hdr(request, "Set-Cookie", "session=; Max-Age=0; Path=/; HttpOnly; SameSite=Strict");
+        LOG_INFO(TAG, "admin password changed by %s", ip.c_str());
+        _sendJson(request, "{\"ok\":true,\"state\":\"reauth_required\"}"); return ESP_OK;
+    }
     if (uri == "/api/reboot") { if (!_requireApiAuth(request, true)) return ESP_OK; _sendJson(request, "{\"ok\":true}"); http_restart_after_response(); return ESP_OK; }
     if (uri == "/api/cloud/history-backfill") {
         if (!_requireApiAuth(request, true)) return ESP_OK;
