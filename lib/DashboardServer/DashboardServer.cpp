@@ -99,10 +99,16 @@ void DashboardServer::begin(ScaleManager& scale, ConfigManager& cfgMgr, AppState
     config.server_port = 80;
     config.max_uri_handlers = 32;
     config.stack_size = 8192;
-    // Explicit so the LWIP socket budget (CONFIG_LWIP_MAX_SOCKETS=16) stays legible:
-    // httpd 5 + MQTT 1 + cloud sync/Discord 1-2 leaves room for the 2-3 connections an
-    // OTA download needs while following GitHub's redirect.
-    config.max_open_sockets = 5;
+    // Browsers keep up to 6 persistent connections open per host, so anything below that
+    // strands requests in the TCP backlog until an existing connection is reclaimed - the
+    // history page's 13-month heatmap fan-out then takes minutes instead of seconds.
+    // CONFIG_LWIP_MAX_SOCKETS=16 leaves room for this alongside MQTT, cloud sync, Discord
+    // and the 2-3 connections an OTA download needs while following GitHub's redirect
+    // (those workers also stand down for the duration of an update).
+    config.max_open_sockets = 8;
+    // Close the least recently used idle connection instead of refusing the new one, so a
+    // client that holds more connections than budgeted degrades in latency, not in reach.
+    config.lru_purge_enable = true;
     config.uri_match_fn = httpd_uri_match_wildcard;
     if (httpd_start(&_server, &config) != ESP_OK) {
         LOG_ERROR(TAG, "HTTP server start failed"); return;
