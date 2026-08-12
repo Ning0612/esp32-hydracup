@@ -369,7 +369,7 @@ OtaRequestResult OtaUpdater::requestUpdate() {
         return OtaRequestResult::NO_UPDATE_AVAILABLE;
     }
     // Refusing up front beats running out of memory mid-write and leaving a half-written slot.
-    if (heap_caps_get_free_size(MALLOC_CAP_INTERNAL) < OTA_MIN_FREE_HEAP_BYTES) {
+    if (heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT) < OTA_MIN_FREE_HEAP_BYTES) {
         return OtaRequestResult::INSUFFICIENT_MEMORY;
     }
     bool idle = false;
@@ -483,7 +483,7 @@ bool OtaUpdater::_downloadAndWrite() {
     // check, since a worker still holding a session is exactly what keeps it low.
     size_t freeHeap = 0;
     for (uint32_t waited = 0;; waited += OTA_SETTLE_POLL_MS) {
-        freeHeap = heap_caps_get_free_size(MALLOC_CAP_INTERNAL);
+        freeHeap = heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
         if (freeHeap >= OTA_MIN_FREE_HEAP_BYTES && waited >= OTA_SETTLE_MIN_MS) break;
         if (waited >= OTA_SETTLE_TIMEOUT_MS) {
             _setMessage("可用記憶體不足（%u KB），已取消更新",
@@ -596,7 +596,11 @@ bool OtaUpdater::_updateWebfs(const char* expectedSha) {
         return false;
     }
 
-    uint8_t* buffer = static_cast<uint8_t*>(heap_caps_malloc(OTA_WEBFS_CHUNK, MALLOC_CAP_INTERNAL));
+    // MALLOC_CAP_8BIT is not optional here. MALLOC_CAP_INTERNAL alone is also satisfied by
+    // IRAM, which only permits 32-bit aligned access - memcpy'ing a chunk into it faults with
+    // a LoadStoreError. That is what crashed every webfs update from v0.7.0 onwards.
+    uint8_t* buffer = static_cast<uint8_t*>(
+        heap_caps_malloc(OTA_WEBFS_CHUNK, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT));
     if (!buffer) {
         _setMessage("記憶體不足，略過網頁資源更新");
         return false;
