@@ -114,6 +114,11 @@ pio run -e esp32dev --target uploadfs   # webfs（設定頁的韌體更新卡片
 > **改 `sdkconfig.defaults` 後必須刪掉 `sdkconfig.esp32dev` 再建置**，否則新值會被既有檔
 > 蓋過而靜默失效。詳見 `CLAUDE.md` 的 Known Environment Constraints。
 
+版本有兩個必須同步的來源：專案根目錄的 `version.txt`（ESP-IDF 的 `PROJECT_VER`，會寫進 app
+descriptor 供 OTA 下載後驗證，優先於 `git describe`）與 `include/version.h` 的 `APP_VERSION`
+（韌體回報與比對用）。release workflow 會檢查兩者與 git tag 三方一致，並直接把 `version.txt`
+當成 manifest 資產發佈。
+
 `[env:esp32dev-debug]` 是同一份韌體以 `-Og` 建置的除錯環境（`scripts/sdkconfig_debug_defaults.py`
 會把 `sdkconfig.debug.defaults` 疊在 `sdkconfig.defaults` 之上）。它**不可用於發佈或 OTA**。
 

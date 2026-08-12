@@ -63,6 +63,10 @@
 // Uptime a freshly flashed image must reach, with the control task still beating, before
 // the bootloader's rollback is cancelled. Never add connectivity to this condition.
 #define OTA_MARK_VALID_DELAY_MS  30000
+#define OTA_MARK_VALID_RETRY_MS  5000
+// Grace period for in-flight cloud sync / Discord requests to finish after the shed flag
+// goes up, before the download starts competing with them for heap and sockets.
+#define OTA_SETTLE_DELAY_MS      1500
 
 // MQTT defaults
 #define DEFAULT_MQTT_BROKER_PORT    1883
