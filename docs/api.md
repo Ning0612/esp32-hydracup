@@ -434,6 +434,7 @@ logfs 不可用回 `503 logfs_unavailable`；Cloud sync 未完整設定回
 | `check_state` | `unknown` / `checking` / `up_to_date` / `update_available` / `check_failed` |
 | `update_state` | `idle` / `downloading` / `writing` / `ready_pending_reboot` / `failed` |
 | `stage` | 更新期間指出正在處理哪一段：`firmware` 或 `webfs` |
+| `last_outcome` | 最後一次更新的結果，存於 NVS 因此**跨重開機保留**。更新以重開機收尾，`message` 只存在約 2.5 秒，沒有這個欄位就查不到究竟發生了什麼 |
 | `message` | 面向使用者的中文說明，**由韌體產生**。裝置可能處於「UI 比韌體舊」的狀態（webfs 寫入被跳過或失敗、或以 USB 燒入舊映像），舊版 UI 必須能顯示新韌體的狀態與錯誤，因此前端只做渲染、不自行組字串 |
 | `pending_verify` | 目前執行的映像尚未確認。控制任務持續心跳滿 30 秒後自動確認；在此之前重新開機會回滾到前一個 slot |
 

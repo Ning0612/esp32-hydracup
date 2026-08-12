@@ -40,6 +40,10 @@ struct OtaStatus {
     // UI older than its firmware (an interrupted or skipped webfs write, or a USB-flashed
     // image), so the page must be able to render states and failures it has never heard of.
     char message[96] = {};
+    // Survives the restart an update ends with. Without it the outcome - especially a webfs
+    // failure - is only visible for the couple of seconds before the device reboots and the
+    // page reloads, which is exactly when nobody is reading it.
+    char lastOutcome[96] = {};
     bool pendingVerify = false;
 };
 

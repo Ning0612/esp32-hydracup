@@ -147,6 +147,7 @@
     <div class="actions"><button class="btn btn-secondary" id="ota-check-btn" type="button" onclick="checkFirmware()">檢查更新</button><button class="btn btn-primary" id="ota-update-btn" type="button" onclick="startFirmwareUpdate()" disabled>立即更新</button></div>
     <div class="progress-bg" id="ota-progress" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" aria-label="韌體更新進度" style="display:none"><div class="progress-fill" id="ota-progress-fill" style="width:0%"></div></div>
     <output id="ota-status" aria-live="polite">讀取狀態中…</output>
+    <p class="hint" id="ota-last" style="display:none"></p>
   </section>
 
   <hr class="divider">
@@ -467,6 +468,10 @@ function renderOta(d) {
   if (d.pending_verify) text += ' · 新韌體驗證中（約 30 秒），請勿重新開機';
   if (d.running_partition) text += ' · 分割區 ' + d.running_partition;
   document.getElementById('ota-status').textContent = text;
+  // An update ends in a restart, so its result would otherwise vanish with the page reload.
+  const last = document.getElementById('ota-last');
+  last.textContent = d.last_outcome ? '上次更新結果：' + d.last_outcome : '';
+  last.style.display = d.last_outcome && !busy ? '' : 'none';
 }
 
 function refreshOta() {
