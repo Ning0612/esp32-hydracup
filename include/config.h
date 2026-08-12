@@ -56,6 +56,15 @@
 // makes prereleases safe for internal testing.
 #define OTA_MANIFEST_URL "https://github.com/Ning0612/esp32-hydracup/releases/latest/download/version.txt"
 #define OTA_FIRMWARE_URL "https://github.com/Ning0612/esp32-hydracup/releases/latest/download/hydracup-esp32dev-firmware.bin"
+// The web assets live in a data partition esp_https_ota cannot target, so they are streamed
+// straight onto it. SHA256SUMS is published alongside them and is the only way to tell whether
+// the image actually arrived intact - there is no second webfs partition to fall back to.
+#define OTA_WEBFS_URL      "https://github.com/Ning0612/esp32-hydracup/releases/latest/download/hydracup-esp32dev-littlefs.bin"
+#define OTA_CHECKSUMS_URL  "https://github.com/Ning0612/esp32-hydracup/releases/latest/download/SHA256SUMS"
+#define OTA_WEBFS_ASSET    "hydracup-esp32dev-littlefs.bin"
+#define OTA_WEBFS_LABEL    "webfs"
+#define OTA_WEBFS_CHUNK    4096
+#define OTA_WEBFS_DEADLINE_MS    (3 * 60 * 1000)
 #define OTA_OVERALL_DEADLINE_MS  (5 * 60 * 1000)
 #define OTA_HTTP_TIMEOUT_MS      15000
 #define OTA_HTTP_BUFFER_BYTES    4096

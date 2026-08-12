@@ -371,6 +371,15 @@ TLS 與 image header 只證明完整性，不證明身分。
 資產發佈，所以 manifest 與映像描述子由建置本身保證一致。`include/version.h` 則是韌體回報
 的版本，CI 會檢查兩者與 git tag 三方一致。
 
+**網頁資源更新（v0.7.0 起）**：同一個更新動作在韌體寫入成功後，會用 release 的 `SHA256SUMS`
+比對 `hydracup-esp32dev-littlefs.bin` 的雜湊與 NVS（`ota` / `webfs_sha`）記錄的已安裝值，
+不同才卸載 `/webfs`、抹除分割區、邊下載邊以 4 KB 寫入並累算 SHA-256，寫完比對相符才記錄新雜湊。
+
+webfs 沒有 A/B 備援也放不進 RAM，寫入是就地覆蓋，中途失敗即損毀，需 USB `uploadfs` 復原——
+這是明確接受的取捨。順序不可對調（先 webfs 後韌體會留下「網頁比韌體新」的組合），且韌體一旦
+寫入成功就一定重新開機，即使 webfs 失敗。不改用「直接雜湊分割區」判斷是否需要更新，因為
+LittleFS 執行期間會改寫 metadata，實際位元組會與發佈映像產生落差。
+
 **開機確認（獨立於本類別）**：`ota_boot_check()` / `ota_mark_app_valid_if_due(bool)` 是自由
 函式，因為未設定 WiFi 的裝置走 AP Mode、根本不會建立 `OtaUpdater`。若把確認綁在它身上
 （或綁在連線狀態上），那些裝置每次開機都會在 30 秒後被 bootloader 回滾。確認條件只有

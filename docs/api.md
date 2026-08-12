@@ -388,7 +388,8 @@ logfs 不可用回 `503 logfs_unavailable`；Cloud sync 未完整設定回
 |---|---|
 | `check_state` | `unknown` / `checking` / `up_to_date` / `update_available` / `check_failed` |
 | `update_state` | `idle` / `downloading` / `writing` / `ready_pending_reboot` / `failed` |
-| `message` | 面向使用者的中文說明，**由韌體產生**。web 資產不隨 OTA 更新，舊版 UI 必須能顯示新韌體的狀態與錯誤，因此前端只做渲染、不自行組字串 |
+| `stage` | 更新期間指出正在處理哪一段：`firmware` 或 `webfs` |
+| `message` | 面向使用者的中文說明，**由韌體產生**。裝置可能處於「UI 比韌體舊」的狀態（webfs 寫入被跳過或失敗、或以 USB 燒入舊映像），舊版 UI 必須能顯示新韌體的狀態與錯誤，因此前端只做渲染、不自行組字串 |
 | `pending_verify` | 目前執行的映像尚未確認。控制任務持續心跳滿 30 秒後自動確認；在此之前重新開機會回滾到前一個 slot |
 
 此端點的 JSON 欄位**只增不改**——移除或改名會讓尚未以 USB 更新 web 資產的裝置顯示錯誤。
@@ -408,8 +409,15 @@ logfs 不可用回 `503 logfs_unavailable`；Cloud sync 未完整設定回
 
 ### `POST /api/ota/update`
 
-需要登入與 CSRF token。下載韌體寫入備用 app slot，完成後約 2.5 秒自動重新開機。
+需要登入與 CSRF token。單一動作依序處理韌體與網頁資源，完成後約 2.5 秒自動重新開機。
 必須先呼叫 `/api/ota/check` 且結果為 `update_available`。
+
+順序為**先韌體、後 webfs**：韌體失敗則整個更新中止且 webfs 未被觸碰；反過來做，失敗時會留下
+「網頁比韌體新」的組合，而相容性契約只保證反向。webfs 僅在 `SHA256SUMS` 取得成功、且其雜湊
+與 NVS 記錄的已安裝值不同時才會重寫。
+
+**webfs 沒有備援分割區**，寫入是就地覆蓋，中途失敗會使靜態頁面損毀，需以
+`pio run -e esp32dev --target uploadfs` 復原。此時 `/api/*` 仍可正常運作。
 
 成功排入回 `202`：
 

@@ -139,7 +139,7 @@
 
   <hr class="divider">
   <section id="firmware" class="card"><h2><span>08</span>韌體更新</h2>
-    <p class="section-note">從 GitHub Releases 下載並寫入備用分割區，完成後自動重新開機；失敗不會影響目前韌體。網頁介面本身不隨 OTA 更新，需另以 USB 燒錄。</p>
+    <p class="section-note">從 GitHub Releases 下載韌體與網頁資源，完成後自動重新開機。韌體寫入備用分割區，失敗不會影響目前版本；網頁資源沒有備援分割區，寫入途中失敗需以 USB 重新燒錄，但不影響裝置記錄與 API。</p>
     <div class="metric-grid compact-grid">
       <div class="metric"><label>目前版本</label><span id="ota-running">--</span></div>
       <div class="metric"><label>最新版本</label><span id="ota-latest">--</span></div>
@@ -449,9 +449,11 @@ function renderOta(d) {
   bar.setAttribute('aria-valuenow', String(percent));
   document.getElementById('ota-progress-fill').style.width = percent + '%';
   document.getElementById('ota-progress-fill').classList.toggle('done', d.update_state === 'ready_pending_reboot');
+  // The firmware writes every user-facing string, including which stage is running, so a
+  // page older than the firmware still describes states it was never taught about.
   let text = d.message || '尚未檢查更新。';
   if (writing) {
-    text = '更新中 ' + percent + '%';
+    text += ' · ' + percent + '%';
     if (d.image_size) text += ' · ' + Math.round((d.bytes_read || 0) / 1024) + ' / ' + Math.round(d.image_size / 1024) + ' KB';
   }
   if (d.pending_verify) text += ' · 新韌體驗證中（約 30 秒），請勿重新開機';

@@ -31,12 +31,14 @@ struct OtaStatus {
     char runningVersion[16] = {};
     char latestVersion[16] = {};
     char runningPartition[12] = {};
+    char stage[10] = {};  // "firmware" or "webfs" while an update runs
     uint8_t progressPercent = 0;
     uint32_t imageSize = 0;
     uint32_t bytesRead = 0;
     int lastHttpStatus = 0;
-    // Human-readable and produced by the firmware on purpose: web assets live in a
-    // partition OTA never touches, so an older UI must be able to render newer failures.
+    // Human-readable and produced by the firmware on purpose: a device can be left running a
+    // UI older than its firmware (an interrupted or skipped webfs write, or a USB-flashed
+    // image), so the page must be able to render states and failures it has never heard of.
     char message[96] = {};
     bool pendingVerify = false;
 };
@@ -68,7 +70,10 @@ private:
     void _runCheck();
     void _runUpdate();
     bool _downloadAndWrite();
+    bool _updateWebfs(const char* expectedSha);
+    bool _fetchText(const char* url, char* out, size_t outLength, int& statusCode);
     bool _fetchLatestVersion(char* out, size_t outLength, int& statusCode);
+    void _setStage(const char* stage);
     void _releasePrimitives();
     void _setMessage(const char* format, ...);
     void _publishRunningPartition();

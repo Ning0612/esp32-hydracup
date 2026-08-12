@@ -12,10 +12,15 @@
 #include "esp_heap_caps.h"
 #include "esp_http_client.h"
 #include "esp_https_ota.h"
+#include "esp_littlefs.h"
 #include "esp_ota_ops.h"
+#include "esp_partition.h"
 #include "esp_system.h"
 #include "hal_log.h"
 #include "hal_time.h"
+#include "mbedtls/sha256.h"
+#include "nvs.h"
+#include "StorageLock.h"
 #include "version.h"
 
 namespace {
@@ -109,6 +114,77 @@ void trimVersionText(char* text) {
 
 std::atomic<bool> g_pendingVerify{false};
 std::atomic<bool> g_verifyResolved{false};
+
+bool isHex64(const char* text) {
+    for (int i = 0; i < 64; ++i) {
+        const char c = text[i];
+        const bool hex = (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F');
+        if (!hex) return false;
+    }
+    return text[64] == '\0';
+}
+
+// Pulls one entry out of a `sha256sum` listing: "<64 hex><spaces><name>" per line.
+bool extractSha(const char* text, const char* asset, char* out) {
+    const size_t assetLength = std::strlen(asset);
+    for (const char* line = text; line && *line;) {
+        const char* newline = std::strchr(line, '\n');
+        size_t length = newline ? static_cast<size_t>(newline - line) : std::strlen(line);
+        while (length > 0 && (line[length - 1] == '\r' || line[length - 1] == ' ')) --length;
+        if (length > 64) {
+            const char* name = line + 64;
+            while (*name == ' ' || *name == '*') ++name;
+            if (std::strncmp(name, "./", 2) == 0) name += 2;
+            const size_t nameLength = (line + length) - name;
+            if (nameLength == assetLength && std::strncmp(name, asset, assetLength) == 0) {
+                std::memcpy(out, line, 64);
+                out[64] = '\0';
+                return isHex64(out);
+            }
+        }
+        line = newline ? newline + 1 : nullptr;
+    }
+    return false;
+}
+
+void shaToHex(const uint8_t digest[32], char* out) {
+    static const char* kHex = "0123456789abcdef";
+    for (int i = 0; i < 32; ++i) {
+        out[i * 2] = kHex[digest[i] >> 4];
+        out[i * 2 + 1] = kHex[digest[i] & 0x0f];
+    }
+    out[64] = '\0';
+}
+
+// The hash of the image currently on the partition. Hashing the live partition instead is not
+// an option: LittleFS rewrites metadata as it runs, so its bytes drift from the published
+// image even when the content is identical.
+bool loadInstalledWebfsSha(char* out) {
+    out[0] = '\0';
+    if (!lockNvs()) return false;
+    nvs_handle_t handle = 0;
+    bool ok = false;
+    if (nvs_open("ota", NVS_READONLY, &handle) == ESP_OK) {
+        size_t length = 65;
+        ok = nvs_get_str(handle, "webfs_sha", out, &length) == ESP_OK;
+        nvs_close(handle);
+    }
+    unlockNvs();
+    if (!ok) out[0] = '\0';
+    return ok;
+}
+
+bool saveInstalledWebfsSha(const char* sha) {
+    if (!lockNvs()) return false;
+    nvs_handle_t handle = 0;
+    bool ok = false;
+    if (nvs_open("ota", NVS_READWRITE, &handle) == ESP_OK) {
+        ok = nvs_set_str(handle, "webfs_sha", sha) == ESP_OK && nvs_commit(handle) == ESP_OK;
+        nvs_close(handle);
+    }
+    unlockNvs();
+    return ok;
+}
 
 }  // namespace
 
@@ -267,10 +343,16 @@ void OtaUpdater::_taskLoop() {
 }
 
 bool OtaUpdater::_fetchLatestVersion(char* out, size_t outLength, int& statusCode) {
+    if (!_fetchText(OTA_MANIFEST_URL, out, outLength, statusCode)) return false;
+    trimVersionText(out);
+    return out[0] != '\0';
+}
+
+bool OtaUpdater::_fetchText(const char* url, char* out, size_t outLength, int& statusCode) {
     ManifestCapture capture{out, outLength, 0, false};
     out[0] = '\0';
     esp_http_client_config_t config = {};
-    config.url = OTA_MANIFEST_URL;
+    config.url = url;
     config.method = HTTP_METHOD_GET;
     config.crt_bundle_attach = esp_crt_bundle_attach;
     config.timeout_ms = OTA_HTTP_TIMEOUT_MS;
@@ -294,13 +376,12 @@ bool OtaUpdater::_fetchLatestVersion(char* out, size_t outLength, int& statusCod
         return false;
     }
     if (capture.truncated) {
-        LOG_WARN(TAG, "manifest larger than %u bytes, refusing to parse a prefix",
+        LOG_WARN(TAG, "response larger than %u bytes, refusing to parse a prefix",
                  static_cast<unsigned>(outLength));
         out[0] = '\0';
         return false;
     }
-    trimVersionText(out);
-    return out[0] != '\0';
+    return true;
 }
 
 void OtaUpdater::_runCheck() {
@@ -439,18 +520,177 @@ bool OtaUpdater::_downloadAndWrite() {
     return true;
 }
 
-void OtaUpdater::_runUpdate() {
+void OtaUpdater::_setStage(const char* stage) {
+    if (!_statusMutex) return;
     xSemaphoreTake(_statusMutex, portMAX_DELAY);
-    _status.updateState = OtaUpdateState::DOWNLOADING;
+    std::snprintf(_status.stage, sizeof(_status.stage), "%s", stage);
     _status.progressPercent = 0;
     _status.imageSize = 0;
     _status.bytesRead = 0;
+    xSemaphoreGive(_statusMutex);
+}
+
+// Streams the LittleFS image straight onto the webfs partition. There is no spare data
+// partition to stage it in and the image does not fit in RAM, so this overwrites in place:
+// an interrupted write leaves the partition unusable until a USB `uploadfs`. The firmware
+// itself keeps running - only the static pages are served from here, not the API.
+bool OtaUpdater::_updateWebfs(const char* expectedSha) {
+    const esp_partition_t* partition = esp_partition_find_first(
+        ESP_PARTITION_TYPE_DATA, ESP_PARTITION_SUBTYPE_DATA_SPIFFS, OTA_WEBFS_LABEL);
+    if (!partition) {
+        _setMessage("找不到 webfs 分割區，略過網頁資源更新");
+        return false;
+    }
+
+    uint8_t* buffer = static_cast<uint8_t*>(heap_caps_malloc(OTA_WEBFS_CHUNK, MALLOC_CAP_INTERNAL));
+    if (!buffer) {
+        _setMessage("記憶體不足，略過網頁資源更新");
+        return false;
+    }
+
+    esp_http_client_config_t config = {};
+    config.url = OTA_WEBFS_URL;
+    config.method = HTTP_METHOD_GET;
+    config.crt_bundle_attach = esp_crt_bundle_attach;
+    config.timeout_ms = OTA_HTTP_TIMEOUT_MS;
+    config.buffer_size = OTA_HTTP_BUFFER_BYTES;
+    config.buffer_size_tx = OTA_HTTP_BUFFER_BYTES;
+    esp_http_client_handle_t client = esp_http_client_init(&config);
+    if (!client) {
+        heap_caps_free(buffer);
+        _setMessage("無法建立連線，略過網頁資源更新");
+        return false;
+    }
+
+    bool ok = false;
+    bool unmounted = false;
+    mbedtls_sha256_context sha;
+    mbedtls_sha256_init(&sha);
+    do {
+        if (esp_http_client_open(client, 0) != ESP_OK) {
+            _setMessage("網頁資源下載無法開始");
+            break;
+        }
+        const int contentLength = esp_http_client_fetch_headers(client);
+        const int status = esp_http_client_get_status_code(client);
+        if (status < 200 || status >= 300) {
+            _setMessage("網頁資源下載失敗（HTTP %d）", status);
+            break;
+        }
+        if (contentLength <= 0 || static_cast<size_t>(contentLength) > partition->size) {
+            _setMessage("網頁資源大小不符（%d bytes）", contentLength);
+            break;
+        }
+        xSemaphoreTake(_statusMutex, portMAX_DELAY);
+        _status.imageSize = static_cast<uint32_t>(contentLength);
+        xSemaphoreGive(_statusMutex);
+
+        // Unmount before touching the partition; static pages 404 until the reboot below.
+        esp_vfs_littlefs_unregister(OTA_WEBFS_LABEL);
+        unmounted = true;
+        if (esp_partition_erase_range(partition, 0, partition->size) != ESP_OK) {
+            _setMessage("webfs 分割區抹除失敗，需以 USB 重新燒錄");
+            break;
+        }
+
+        mbedtls_sha256_starts(&sha, 0);
+        const uint32_t startedAt = hal_millis();
+        size_t written = 0;
+        size_t pending = 0;
+        bool failed = false;
+        for (;;) {
+            if (hal_millis() - startedAt > OTA_WEBFS_DEADLINE_MS) {
+                _setMessage("網頁資源下載逾時，需以 USB 重新燒錄");
+                failed = true;
+                break;
+            }
+            const int read = esp_http_client_read(client, reinterpret_cast<char*>(buffer) + pending,
+                                                  OTA_WEBFS_CHUNK - pending);
+            if (read < 0) {
+                _setMessage("網頁資源下載中斷，需以 USB 重新燒錄");
+                failed = true;
+                break;
+            }
+            if (read == 0) break;
+            pending += static_cast<size_t>(read);
+            if (pending < OTA_WEBFS_CHUNK) continue;
+            if (written + pending > partition->size ||
+                esp_partition_write(partition, written, buffer, pending) != ESP_OK) {
+                _setMessage("webfs 寫入失敗，需以 USB 重新燒錄");
+                failed = true;
+                break;
+            }
+            mbedtls_sha256_update(&sha, buffer, pending);
+            written += pending;
+            pending = 0;
+            xSemaphoreTake(_statusMutex, portMAX_DELAY);
+            _status.bytesRead = written;
+            _status.progressPercent = static_cast<uint8_t>(
+                std::min<uint32_t>(100, written * 100 / static_cast<uint32_t>(contentLength)));
+            xSemaphoreGive(_statusMutex);
+        }
+        if (failed) break;
+
+        // esp_partition_write needs a 4-byte aligned length; the padding is never hashed.
+        if (pending > 0) {
+            const size_t padded = (pending + 3u) & ~3u;
+            std::memset(buffer + pending, 0xFF, padded - pending);
+            if (written + padded > partition->size ||
+                esp_partition_write(partition, written, buffer, padded) != ESP_OK) {
+                _setMessage("webfs 寫入失敗，需以 USB 重新燒錄");
+                break;
+            }
+            mbedtls_sha256_update(&sha, buffer, pending);
+            written += pending;
+        }
+        if (!esp_http_client_is_complete_data_received(client) ||
+            written != static_cast<size_t>(contentLength)) {
+            _setMessage("網頁資源不完整，需以 USB 重新燒錄");
+            break;
+        }
+
+        uint8_t digest[32] = {};
+        char actual[65] = {};
+        mbedtls_sha256_finish(&sha, digest);
+        shaToHex(digest, actual);
+        if (std::strcmp(actual, expectedSha) != 0) {
+            _setMessage("網頁資源校驗不符，需以 USB 重新燒錄");
+            break;
+        }
+        if (!saveInstalledWebfsSha(actual)) {
+            // Harmless: the next update simply rewrites an identical image.
+            LOG_WARN(TAG, "webfs written but its hash could not be recorded");
+        }
+        ok = true;
+    } while (false);
+
+    mbedtls_sha256_free(&sha);
+    esp_http_client_close(client);
+    esp_http_client_cleanup(client);
+    heap_caps_free(buffer);
+    if (!ok && unmounted) LOG_WARN(TAG, "webfs left unmounted after a failed write");
+    return ok;
+}
+
+void OtaUpdater::_runUpdate() {
+    xSemaphoreTake(_statusMutex, portMAX_DELAY);
+    _status.updateState = OtaUpdateState::DOWNLOADING;
     std::snprintf(_status.message, sizeof(_status.message), "開始下載韌體");
     xSemaphoreGive(_statusMutex);
+    _setStage("firmware");
 
-    const bool ok = _downloadAndWrite();
+    // Read the checksum listing before writing anything: without it the web assets cannot be
+    // verified, and an unverifiable image must not be written to a partition with no spare.
+    char checksums[768] = {};
+    char expectedWebfsSha[65] = {};
+    int checksumStatus = 0;
+    const bool haveWebfsSha = _fetchText(OTA_CHECKSUMS_URL, checksums, sizeof(checksums),
+                                         checksumStatus) &&
+                              extractSha(checksums, OTA_WEBFS_ASSET, expectedWebfsSha);
 
-    if (!ok) {
+    // Firmware first. If it fails nothing is committed and webfs is untouched; the reverse
+    // order could leave a UI newer than the firmware serving it.
+    if (!_downloadAndWrite()) {
         if (_state) _state->otaInProgress.store(false);
         xSemaphoreTake(_statusMutex, portMAX_DELAY);
         _status.updateState = OtaUpdateState::FAILED;
@@ -460,10 +700,29 @@ void OtaUpdater::_runUpdate() {
         return;
     }
 
+    // The app slot is now committed, so from here every path reboots: the new firmware is
+    // better than the old one even if the web assets did not make it.
+    char installedWebfsSha[65] = {};
+    loadInstalledWebfsSha(installedWebfsSha);
+    const char* webfsOutcome = "網頁資源無校驗資訊，維持原樣";
+    if (haveWebfsSha && std::strcmp(installedWebfsSha, expectedWebfsSha) == 0) {
+        webfsOutcome = "網頁資源已是最新";
+        LOG_INFO(TAG, "webfs already matches the published image, skipping");
+    } else if (haveWebfsSha) {
+        _setStage("webfs");
+        _setMessage("開始更新網頁資源");
+        webfsOutcome = _updateWebfs(expectedWebfsSha)
+                           ? "網頁資源已更新"
+                           : "網頁資源更新失敗，需以 USB 重新燒錄";
+    } else {
+        LOG_WARN(TAG, "SHA256SUMS unavailable (HTTP %d), leaving webfs untouched", checksumStatus);
+    }
+
     xSemaphoreTake(_statusMutex, portMAX_DELAY);
     _status.updateState = OtaUpdateState::READY_PENDING_REBOOT;
     _status.progressPercent = 100;
-    std::snprintf(_status.message, sizeof(_status.message), "更新完成，即將重新開機");
+    std::snprintf(_status.message, sizeof(_status.message), "韌體更新完成 · %s · 即將重新開機",
+                  webfsOutcome);
     xSemaphoreGive(_statusMutex);
     LOG_INFO(TAG, "update complete, restarting");
     vTaskDelay(pdMS_TO_TICKS(OTA_REBOOT_DELAY_MS));
