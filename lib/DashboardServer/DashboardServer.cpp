@@ -13,6 +13,7 @@
 #include "ConfigManager.h"
 #include "DiscordNotifier.h"
 #include "EventLogger.h"
+#include "OtaUpdater.h"
 #include "ReminderManager.h"
 #include "ScaleManager.h"
 #include "WiFiManager.h"
@@ -23,6 +24,7 @@
 #include "hal_time.h"
 #include "hydracup_auth.h"
 #include "http_server_support.h"
+#include "version.h"
 #include "freertos/task.h"
 
 namespace {
@@ -97,6 +99,10 @@ void DashboardServer::begin(ScaleManager& scale, ConfigManager& cfgMgr, AppState
     config.server_port = 80;
     config.max_uri_handlers = 32;
     config.stack_size = 8192;
+    // Explicit so the LWIP socket budget (CONFIG_LWIP_MAX_SOCKETS=16) stays legible:
+    // httpd 5 + MQTT 1 + cloud sync/Discord 1-2 leaves room for the 2-3 connections an
+    // OTA download needs while following GitHub's redirect.
+    config.max_open_sockets = 5;
     config.uri_match_fn = httpd_uri_match_wildcard;
     if (httpd_start(&_server, &config) != ESP_OK) {
         LOG_ERROR(TAG, "HTTP server start failed"); return;
@@ -151,6 +157,7 @@ esp_err_t DashboardServer::_handleGet(httpd_req_t* request) {
         const CupState cup = snapshot.cupState;
         cJSON* doc = cJSON_CreateObject(); cJSON_AddBoolToObject(doc, "ok", true);
         cJSON_AddStringToObject(doc, "mode", "normal");
+        cJSON_AddStringToObject(doc, "app_version", APP_VERSION);
         cJSON_AddBoolToObject(doc, "wifi_connected", snapshot.wifiConnected);
         cJSON_AddStringToObject(doc, "ip", snapshot.ipAddress);
         cJSON_AddBoolToObject(doc, "ntp_synced", snapshot.ntpSynced);
@@ -233,6 +240,25 @@ esp_err_t DashboardServer::_handleGet(httpd_req_t* request) {
         result += "],\"skipped\":" + std::to_string(skipped) + "}";
         _sendJson(request, result); return ESP_OK;
     }
+    if (uri == "/api/ota/status") {
+        if (!_requireApiAuth(request, false)) return ESP_OK;
+        if (!_ota) { _sendJson(request, "{\"ok\":false,\"error\":\"ota_unavailable\"}", 503); return ESP_OK; }
+        const OtaStatus ota = _ota->snapshot();
+        cJSON* doc = cJSON_CreateObject();
+        cJSON_AddBoolToObject(doc, "ok", true);
+        cJSON_AddStringToObject(doc, "check_state", OtaUpdater::checkStateName(ota.checkState));
+        cJSON_AddStringToObject(doc, "update_state", OtaUpdater::updateStateName(ota.updateState));
+        cJSON_AddStringToObject(doc, "running_version", ota.runningVersion);
+        cJSON_AddStringToObject(doc, "latest_version", ota.latestVersion);
+        cJSON_AddStringToObject(doc, "running_partition", ota.runningPartition);
+        cJSON_AddNumberToObject(doc, "progress_percent", ota.progressPercent);
+        cJSON_AddNumberToObject(doc, "image_size", ota.imageSize);
+        cJSON_AddNumberToObject(doc, "bytes_read", ota.bytesRead);
+        cJSON_AddNumberToObject(doc, "last_http_status", ota.lastHttpStatus);
+        cJSON_AddStringToObject(doc, "message", ota.message);
+        cJSON_AddBoolToObject(doc, "pending_verify", ota.pendingVerify);
+        _sendJson(request, jsonString(doc)); cJSON_Delete(doc); return ESP_OK;
+    }
     if (uri == "/") { if (_requirePageAuth(request, "/")) _handleStatic(request, "/webfs/index.html", "text/html"); return ESP_OK; }
     if (uri == "/settings") { if (_requirePageAuth(request, "/settings")) _handleStatic(request, "/webfs/settings.html", "text/html"); return ESP_OK; }
     if (uri == "/history") { if (_requirePageAuth(request, "/history")) _handleStatic(request, "/webfs/history.html", "text/html"); return ESP_OK; }
@@ -265,6 +291,25 @@ esp_err_t DashboardServer::_handlePost(httpd_req_t* request) {
         if (!_cloudSync || !_cloudSync->isConfigured()) { _sendJson(request, "{\"ok\":false,\"error\":\"cloud_not_configured\"}", 409); return ESP_OK; }
         if (!_cloudSync->requestHistoryBackfill()) { _sendJson(request, "{\"ok\":false,\"error\":\"history_backfill_queue_failed\"}", 503); return ESP_OK; }
         _sendJson(request, "{\"ok\":true,\"state\":\"queued\"}", 202); return ESP_OK;
+    }
+    if (uri == "/api/ota/check" || uri == "/api/ota/update") {
+        if (!_requireApiAuth(request, true)) return ESP_OK;
+        if (!_ota) { _sendJson(request, "{\"ok\":false,\"error\":\"ota_unavailable\"}", 503); return ESP_OK; }
+        const bool isUpdate = uri == "/api/ota/update";
+        switch (isUpdate ? _ota->requestUpdate() : _ota->requestCheck()) {
+            case OtaRequestResult::ACCEPTED:
+                _sendJson(request, isUpdate ? "{\"ok\":true,\"state\":\"queued\"}" : "{\"ok\":true,\"state\":\"checking\"}", isUpdate ? 202 : 200);
+                break;
+            case OtaRequestResult::BUSY:
+                _sendJson(request, "{\"ok\":false,\"error\":\"ota_busy\"}", 409); break;
+            case OtaRequestResult::NO_UPDATE_AVAILABLE:
+                _sendJson(request, "{\"ok\":false,\"error\":\"no_update_available\"}", 409); break;
+            case OtaRequestResult::INSUFFICIENT_MEMORY:
+                _sendJson(request, "{\"ok\":false,\"error\":\"insufficient_memory\"}", 503); break;
+            case OtaRequestResult::OFFLINE:
+                _sendJson(request, "{\"ok\":false,\"error\":\"offline\"}", 503); break;
+        }
+        return ESP_OK;
     }
     if (uri == "/api/tare") {
         if (!_requireApiAuth(request, true)) return ESP_OK;

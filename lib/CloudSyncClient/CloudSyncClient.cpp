@@ -116,6 +116,7 @@ bool currentLocalDate(char value[11]) {
 bool CloudSyncClient::init(AppState& appState, AppConfig& config,
                            ConfigManager& configManager, EventLogger& eventLogger,
                            bool logFsOk) {
+    _appState = &appState;
     _configManager = &configManager;
     _eventLogger = &eventLogger;
     _logFsOk = logFsOk;
@@ -298,6 +299,13 @@ void CloudSyncClient::_taskLoop() {
     uint32_t lastAttemptMs = 0;
     uint32_t lastHistoryAttemptMs = 0;
     for (;;) {
+        // Stand down entirely during OTA: uploads open a second TLS session (~40 KB heap)
+        // and touch logfs, both of which compete with writing the app partition. Queued
+        // events are preserved and drain once the update finishes or fails.
+        if (_appState && _appState->otaInProgress.load()) {
+            vTaskDelay(pdMS_TO_TICKS(250));
+            continue;
+        }
         _drainOverflowEvents();
         _drainDeferredAcks();
         _persistPendingConfig();
