@@ -12,25 +12,32 @@ constexpr const char* MAINT_NAMESPACE = "maint";
 constexpr const char* CLEAR_KEY = "clear_logs";
 constexpr const char* LOGFS_LABEL = "logfs";
 
+// The whole namespace, not named keys: drink_ctr holds nothing but the counters, and this
+// way a later schema addition cannot leave a stale field behind after a wipe.
 bool eraseNamespace(const char* name) {
+    if (!lockNvs()) return false;
     nvs_handle_t handle = 0;
     const esp_err_t opened = nvs_open(name, NVS_READWRITE, &handle);
-    if (opened == ESP_ERR_NVS_NOT_FOUND) return true;  // nothing stored
-    if (opened != ESP_OK) return false;
-    const bool ok = nvs_erase_all(handle) == ESP_OK && nvs_commit(handle) == ESP_OK;
-    nvs_close(handle);
+    bool ok = opened == ESP_ERR_NVS_NOT_FOUND;  // nothing stored counts as cleared
+    if (opened == ESP_OK) {
+        ok = nvs_erase_all(handle) == ESP_OK && nvs_commit(handle) == ESP_OK;
+        nvs_close(handle);
+    }
+    unlockNvs();
     return ok;
 }
 
 bool eraseKey(const char* name, const char* key) {
+    if (!lockNvs()) return false;
     nvs_handle_t handle = 0;
     const esp_err_t opened = nvs_open(name, NVS_READWRITE, &handle);
-    if (opened == ESP_ERR_NVS_NOT_FOUND) return true;
-    if (opened != ESP_OK) return false;
-    const esp_err_t erased = nvs_erase_key(handle, key);
-    const bool ok = (erased == ESP_OK || erased == ESP_ERR_NVS_NOT_FOUND) &&
-                    nvs_commit(handle) == ESP_OK;
-    nvs_close(handle);
+    bool ok = opened == ESP_ERR_NVS_NOT_FOUND;
+    if (opened == ESP_OK) {
+        const esp_err_t erased = nvs_erase_key(handle, key);
+        ok = (erased == ESP_OK || erased == ESP_ERR_NVS_NOT_FOUND) && nvs_commit(handle) == ESP_OK;
+        nvs_close(handle);
+    }
+    unlockNvs();
     return ok;
 }
 
@@ -49,32 +56,40 @@ bool history_request_clear() {
 }
 
 void history_apply_pending_clear() {
-    // No lockNvs() anywhere in here: the tasks that contend for it do not exist yet.
-    nvs_handle_t handle = 0;
     uint8_t pending = 0;
-    if (nvs_open(MAINT_NAMESPACE, NVS_READONLY, &handle) == ESP_OK) {
-        if (nvs_get_u8(handle, CLEAR_KEY, &pending) != ESP_OK) pending = 0;
-        nvs_close(handle);
+    if (lockNvs()) {
+        nvs_handle_t handle = 0;
+        if (nvs_open(MAINT_NAMESPACE, NVS_READONLY, &handle) == ESP_OK) {
+            if (nvs_get_u8(handle, CLEAR_KEY, &pending) != ESP_OK) pending = 0;
+            nvs_close(handle);
+        }
+        unlockNvs();
     }
     if (!pending) return;
 
     LOG_INFO(TAG, "clearing drink history before mounting filesystems");
-    // Formats an unmounted partition too - esp_littlefs_format() builds a temporary context
-    // when the label is not registered yet.
-    const esp_err_t formatted = esp_littlefs_format(LOGFS_LABEL);
-    // Today's totals are in NVS, not logfs; leaving them would show a total with no records.
+    // NVS before the format, so the step that cannot be undone runs last. A failure here
+    // leaves everything intact and the flag set, and the next boot simply tries again.
+    // Today's totals live in NVS, not logfs; leaving them would show a total with no records.
     const bool counters = eraseNamespace("drink_ctr");
-    // The cloud overflow store would otherwise re-inject the very events just deleted.
+    // The cloud overflow store would otherwise re-inject the very events about to be deleted.
     const bool overflow = eraseKey("cloud_sync", "evt_overflow");
-
-    if (formatted == ESP_OK && counters && overflow) {
-        // Cleared last, so an interrupted wipe simply runs again on the next boot.
-        if (!eraseKey(MAINT_NAMESPACE, CLEAR_KEY))
-            LOG_WARN(TAG, "history cleared but the request flag remains; it will repeat");
-        else
-            LOG_INFO(TAG, "drink history cleared");
+    if (!counters || !overflow) {
+        LOG_ERROR(TAG, "history clear aborted (counters=%d overflow=%d); logfs untouched, "
+                       "retrying on the next boot", counters, overflow);
         return;
     }
-    LOG_ERROR(TAG, "history clear incomplete (format=%s counters=%d overflow=%d), retrying next boot",
-              esp_err_to_name(formatted), counters, overflow);
+
+    // Formats an unmounted partition too: esp_littlefs_format() builds a temporary context
+    // when the label is not registered yet.
+    const esp_err_t formatted = esp_littlefs_format(LOGFS_LABEL);
+    if (formatted != ESP_OK) {
+        LOG_ERROR(TAG, "logfs format failed (%s); counters are already cleared, retrying on "
+                       "the next boot", esp_err_to_name(formatted));
+        return;
+    }
+
+    // Cleared last, so an interrupted wipe - including a power cut - simply runs again.
+    if (eraseKey(MAINT_NAMESPACE, CLEAR_KEY)) LOG_INFO(TAG, "drink history cleared");
+    else LOG_WARN(TAG, "history cleared but the request flag remains; it will repeat on boot");
 }

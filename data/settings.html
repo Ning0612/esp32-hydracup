@@ -494,7 +494,8 @@ function postOta(path, pending) {
 const CLEAR_ERRORS = {
   invalid_credentials: '密碼不正確。',
   rate_limited: '嘗試次數過多，請稍後再試。',
-  request_not_stored: '無法記錄清除要求，請再試一次。'
+  request_not_stored: '無法記錄清除要求，請再試一次。',
+  history_backfill_in_progress: '歷史補傳進行中，請等它結束後再清除。'
 };
 
 function clearHistory() {
