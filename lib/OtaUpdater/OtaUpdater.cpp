@@ -127,7 +127,9 @@ void ota_mark_app_valid_if_due(bool controlHealthy) {
     static uint32_t nextAttemptMs = OTA_MARK_VALID_DELAY_MS;
     if (g_verifyResolved.load()) return;
     if (!g_pendingVerify.load()) { g_verifyResolved.store(true); return; }
-    if (hal_millis() < nextAttemptMs || !controlHealthy) return;
+    // Signed difference so the comparison survives the ~49.7 day millis() rollover; a plain
+    // `now < nextAttemptMs` would wrap and retry every service tick instead of every 5 s.
+    if (static_cast<int32_t>(hal_millis() - nextAttemptMs) < 0 || !controlHealthy) return;
     const esp_err_t result = esp_ota_mark_app_valid_cancel_rollback();
     if (result != ESP_OK) {
         // Writing otadata failed, so this image really is still pending: keep retrying and
@@ -339,12 +341,21 @@ bool OtaUpdater::_downloadAndWrite() {
     // Started before begin() so TLS handshake and redirects count against the deadline too.
     const uint32_t startedAt = hal_millis();
 
-    // otaInProgress was raised in requestUpdate(); give in-flight cloud sync and Discord
-    // requests a moment to finish before competing with the download for heap and sockets.
-    vTaskDelay(pdMS_TO_TICKS(OTA_SETTLE_DELAY_MS));
-    if (heap_caps_get_free_size(MALLOC_CAP_INTERNAL) < OTA_MIN_FREE_HEAP_BYTES) {
-        _setMessage("可用記憶體不足，已取消更新");
-        return false;
+    // otaInProgress was raised in requestUpdate(), but the other workers only observe it at
+    // the top of their loops - one already inside an HTTPS request keeps its TLS heap until
+    // it finishes, and their HTTP timeout is 10 s. A fixed delay cannot cover that, so wait
+    // on the thing actually at stake: free internal heap. This doubles as the pre-flight
+    // check, since a worker still holding a session is exactly what keeps it low.
+    size_t freeHeap = 0;
+    for (uint32_t waited = 0;; waited += OTA_SETTLE_POLL_MS) {
+        freeHeap = heap_caps_get_free_size(MALLOC_CAP_INTERNAL);
+        if (freeHeap >= OTA_MIN_FREE_HEAP_BYTES && waited >= OTA_SETTLE_MIN_MS) break;
+        if (waited >= OTA_SETTLE_TIMEOUT_MS) {
+            _setMessage("可用記憶體不足（%u KB），已取消更新",
+                        static_cast<unsigned>(freeHeap / 1024));
+            return false;
+        }
+        vTaskDelay(pdMS_TO_TICKS(OTA_SETTLE_POLL_MS));
     }
 
     char expected[16] = {};

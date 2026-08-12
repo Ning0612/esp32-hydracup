@@ -55,6 +55,6 @@ void MqttPublisher::loop(float todayTotalMl) {
 }
 
 void MqttPublisher::_taskFunc(void* param) { static_cast<MqttPublisher*>(param)->_taskLoop(); }
-void MqttPublisher::_taskLoop() { PublishMsg message = {}; for (;;) { if (_state && _state->otaInProgress.load()) { vTaskDelay(pdMS_TO_TICKS(200)); continue; } if (xQueueReceive(_publishQueue, &message, portMAX_DELAY) == pdTRUE && _state->mqttConnected.load()) esp_mqtt_client_publish(_client, STATUS, message.payload, 0, 1, message.retained ? 1 : 0); } }
+void MqttPublisher::_taskLoop() { PublishMsg message = {}; for (;;) { if (_state && _state->otaInProgress.load()) { vTaskDelay(pdMS_TO_TICKS(200)); continue; } if (xQueueReceive(_publishQueue, &message, portMAX_DELAY) == pdTRUE && !_state->otaInProgress.load() && _state->mqttConnected.load()) esp_mqtt_client_publish(_client, STATUS, message.payload, 0, 1, message.retained ? 1 : 0); } }
 void MqttPublisher::_eventHandler(void* handlerArg, esp_event_base_t, int32_t eventId, void*) { static_cast<MqttPublisher*>(handlerArg)->_onEvent(eventId); }
 void MqttPublisher::_onEvent(int32_t eventId) { if (!_state) return; if (eventId == MQTT_EVENT_CONNECTED) { _state->mqttConnected.store(true); esp_mqtt_client_publish(_client, "hydracup/availability", "{\"online\":true}", 0, 1, 1); LOG_INFO(TAG, "connected"); } else if (eventId == MQTT_EVENT_DISCONNECTED) { _state->mqttConnected.store(false); } }
