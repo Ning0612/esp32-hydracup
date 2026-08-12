@@ -15,6 +15,7 @@
 #include "DrinkDetector.h"
 #include "EventLogger.h"
 #include "MqttPublisher.h"
+#include "OtaUpdater.h"
 #include "ReminderManager.h"
 #include "RuntimeCoordinator.h"
 #include "ScaleManager.h"
@@ -51,6 +52,7 @@ DiscordNotifier discordNotifier;
 EventLogger eventLogger;
 DailySummaryManager dailySummaryManager;
 MqttPublisher mqttPublisher;
+OtaUpdater otaUpdater;
 RuntimeCoordinator runtimeCoordinator;
 TaskHandle_t controlTaskHandle = nullptr;
 uint32_t controlHeartbeat = 0;
@@ -195,7 +197,7 @@ void runControlIteration() {
     long tareOffset = 0;
     if (scaleManager.takeTareResult(tareOffset) && pendingTareRequestId) { drinkDetector.resetScaleBaseline(); ControlResult result; result.requestId = pendingTareRequestId; result.status = ControlResultStatus::OK; result.calibrationFactor = scaleManager.getCalibrationFactor(); result.tareOffset = tareOffset; result.weightGrams = scaleManager.getWeightGrams(); runtimeCoordinator.reply(result); pendingTareRequestId = 0; }
     else if (scaleManager.takeTareFailure() && pendingTareRequestId) { ControlResult result; result.requestId = pendingTareRequestId; result.status = ControlResultStatus::FAILED; result.calibrationFactor = scaleManager.getCalibrationFactor(); result.tareOffset = scaleManager.getTareOffset(); result.weightGrams = scaleManager.getWeightGrams(); runtimeCoordinator.reply(result); pendingTareRequestId = 0; }
-    const bool persistenceReadyBefore = drinkDetector.isPersistenceInitialized(); if (persistenceReadyBefore) dailySummaryManager.update(); if (!scaleManager.isTareRunning()) drinkDetector.update(); if (!persistenceReadyBefore && drinkDetector.isPersistenceInitialized()) dailySummaryManager.update(); reminderManager.update();
+    const bool persistenceReadyBefore = drinkDetector.isPersistenceInitialized(); if (persistenceReadyBefore) dailySummaryManager.update(); if (!scaleManager.isTareRunning() && !appState.otaInProgress.load()) drinkDetector.update(); if (!persistenceReadyBefore && drinkDetector.isPersistenceInitialized()) dailySummaryManager.update(); reminderManager.update();
     appState.weightGrams = scaleManager.getWeightGrams(); appState.nextReminderSec = reminderManager.getNextReminderSec(); appState.ntpSynced = timeManager.isSynced();
     static bool pauseRestored = false;
     if (!pauseRestored && appState.ntpSynced) {
@@ -236,6 +238,7 @@ void serviceTask(void*) {
     uint32_t lastHealth = 0; bool lastWifi = runtimeCoordinator.snapshot().wifiConnected;
     for (;;) {
         if (appState.mode == AppMode::NORMAL) { wifiManager.loop(); const bool connected = wifiManager.isConnected(); const std::string ipAddress = connected ? wifiManager.getIP() : "0.0.0.0"; appState.wifiConnected.store(connected); cloudSyncClient.setConnectivity(connected); if (connected != lastWifi) { lastWifi = connected; runtimeCoordinator.publishConnectivity(connected, ipAddress); } mqttPublisher.loop(runtimeCoordinator.snapshot().todayTotalMl); }
+        ota_mark_app_valid_if_due(runtimeCoordinator.isControlHealthy());
         const uint32_t now = hal_millis(); if (now - lastHealth >= 30000) { lastHealth = now; const RuntimeSnapshot snapshot = runtimeCoordinator.snapshot(); const UBaseType_t stack = controlTaskHandle ? uxTaskGetStackHighWaterMark(controlTaskHandle) : 0; LOG_INFO("RTOS", "heartbeat=%lu stack_free=%u heap=%u min_heap=%u cmd_drop=%lu result_drop=%lu", static_cast<unsigned long>(snapshot.controlHeartbeat), static_cast<unsigned>(stack), static_cast<unsigned>(esp_get_free_heap_size()), static_cast<unsigned>(heap_caps_get_minimum_free_size(MALLOC_CAP_INTERNAL)), static_cast<unsigned long>(snapshot.commandDrops), static_cast<unsigned long>(snapshot.resultDrops)); if (!runtimeCoordinator.isControlHealthy()) LOG_WARN("RTOS", "control task heartbeat stalled"); }
         vTaskDelay(pdMS_TO_TICKS(50));
     }
@@ -247,6 +250,7 @@ extern "C" void app_main(void) {
     LOG_INFO(TAG, "HydraCup v%s booting (ESP-IDF)", APP_VERSION);
     const esp_err_t nvsResult = nvs_flash_init();
     if (nvsResult != ESP_OK) { LOG_ERROR(TAG, "NVS init failed: %s", esp_err_to_name(nvsResult)); return; }
+    ota_boot_check();
     mountFilesystems(); configManager.load(appConfig); dailyGoalMl = appConfig.dailyGoalMl;
     reminderEnabledSetting = appConfig.reminderEnabled;
     reminderIntervalMinSetting = appConfig.reminderIntervalMin;
@@ -267,7 +271,9 @@ extern "C" void app_main(void) {
             LOG_ERROR(TAG, "cloud sync initialization failed");
         }
         drinkDetector.setTimeManager(&timeManager); drinkDetector.setDiscordNotifier(&discordNotifier); drinkDetector.setEventLogger(&eventLogger); drinkDetector.setMqttPublisher(&mqttPublisher); drinkDetector.setCloudSyncClient(&cloudSyncClient); mqttPublisher.setTimeManager(&timeManager);
-        dailySummaryManager.init(discordNotifier, drinkDetector, timeManager, appConfig); dashboardServer.begin(scaleManager, configManager, appState, appConfig, buzzerController, reminderManager, appState.logFsOk, runtimeCoordinator, eventLogger, discordNotifier, wifiManager, cloudSyncClient); runtimeCoordinator.publishConnectivity(true, appState.ipAddress); displayManager.sleep(); LOG_INFO(TAG, "normal mode IP=%s", appState.ipAddress.c_str());
+        dailySummaryManager.init(discordNotifier, drinkDetector, timeManager, appConfig); dashboardServer.begin(scaleManager, configManager, appState, appConfig, buzzerController, reminderManager, appState.logFsOk, runtimeCoordinator, eventLogger, discordNotifier, wifiManager, cloudSyncClient);
+        if (otaUpdater.init(appState, runtimeCoordinator)) dashboardServer.setOtaUpdater(otaUpdater);
+        runtimeCoordinator.publishConnectivity(true, appState.ipAddress); displayManager.sleep(); LOG_INFO(TAG, "normal mode IP=%s", appState.ipAddress.c_str());
     } else {
         const bool ap = wifiManager.startAP(appConfig.apSsid, appConfig.apPassword); appState.mode = AppMode::AP_MODE; appState.ipAddress = wifiManager.getAPIP(); runtimeCoordinator.publishConnectivity(false, appState.ipAddress); if (ap) { configPortal.begin(configManager, appState, appConfig, wifiManager); displayManager.showAPMode(appConfig.apSsid, appConfig.apPassword, appState.ipAddress); LOG_INFO(TAG, "AP mode SSID=%s IP=%s", appConfig.apSsid.c_str(), appState.ipAddress.c_str()); } else if (appState.oledOk) displayManager.showError("AP FAILED");
     }

@@ -171,6 +171,7 @@ private:
                   float amountMl, float totalMl, uint32_t drinkCount);
     static CloudCommandType _commandType(const char* value);
 
+    AppState* _appState = nullptr;
     ConfigManager* _configManager = nullptr;
     EventLogger* _eventLogger = nullptr;
     bool _logFsOk = false;

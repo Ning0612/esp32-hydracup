@@ -138,7 +138,15 @@
   </form>
 
   <hr class="divider">
-  <section id="calibration" class="card"><h2><span>08</span>秤重校正</h2>
+  <section id="firmware" class="card"><h2><span>08</span>韌體更新</h2>
+    <p class="section-note">從 GitHub Releases 下載並寫入備用分割區，完成後自動重新開機；失敗不會影響目前韌體。網頁介面本身不隨 OTA 更新，需另以 USB 燒錄。</p>
+    <div class="split-grid"><div><div class="label">目前版本</div><div class="factor-badge" id="ota-running">--</div></div><div><div class="label">最新版本</div><div class="factor-badge" id="ota-latest">--</div></div></div>
+    <div class="actions"><button class="btn btn-secondary" id="ota-check-btn" type="button" onclick="checkFirmware()">檢查更新</button><button class="btn btn-primary" id="ota-update-btn" type="button" onclick="startFirmwareUpdate()" disabled>立即更新</button></div>
+    <output id="ota-status" aria-live="polite">讀取狀態中…</output>
+  </section>
+
+  <hr class="divider">
+  <section id="calibration" class="card"><h2><span>09</span>秤重校正</h2>
     <p class="section-note">先移除所有重物歸零，再放上已知重量完成校正。</p>
     <div class="split-grid"><div><div class="label">目前校正因子</div><div class="factor-badge" id="cur-factor">--</div></div><div><div class="label">即時重量</div><div class="weight-display-lg" id="cal-weight">-- g</div></div></div>
     <div class="section-title">步驟 1 / 歸零</div><div class="actions"><button class="btn btn-secondary" type="button" onclick="doTare()">執行歸零</button></div><div class="msg" id="tare-msg"></div>
@@ -411,12 +419,67 @@ function doCalibrate() {
   }).catch(() => showMsg('cal-msg', '連線失敗', false));
 }
 
+// Every user-facing string below comes from the firmware's `message` field on purpose:
+// web assets live in a partition OTA never rewrites, so this page can be older than the
+// firmware it talks to and must still be able to describe new states and new failures.
+let otaTimer = null;
+let otaBusy = false;
+
+function renderOta(d) {
+  const busy = d.check_state === 'checking' ||
+    d.update_state === 'downloading' || d.update_state === 'writing';
+  otaBusy = busy;
+  document.getElementById('ota-running').textContent = d.running_version || '--';
+  document.getElementById('ota-latest').textContent = d.latest_version || '--';
+  document.getElementById('ota-check-btn').disabled = busy;
+  document.getElementById('ota-update-btn').disabled = busy || d.check_state !== 'update_available';
+  let text = d.message || '尚未檢查更新。';
+  if (d.update_state === 'downloading' || d.update_state === 'writing') {
+    text = '更新中 ' + (d.progress_percent || 0) + '%';
+    if (d.image_size) text += ' · ' + Math.round((d.bytes_read || 0) / 1024) + ' / ' + Math.round(d.image_size / 1024) + ' KB';
+  }
+  if (d.pending_verify) text += ' · 新韌體驗證中（約 30 秒），請勿重新開機';
+  if (d.running_partition) text += ' · 分割區 ' + d.running_partition;
+  document.getElementById('ota-status').textContent = text;
+}
+
+function refreshOta() {
+  return hydraFetch('/api/ota/status').then(r => r.json()).then(d => {
+    if (d.ok) renderOta(d);
+    else document.getElementById('ota-status').textContent = '韌體更新無法使用（' + (d.error || '未知') + '）';
+  }).catch(() => {
+    // The device reboots itself once the write finishes, so a dropped poll is expected then.
+    if (otaBusy) document.getElementById('ota-status').textContent = '裝置可能正在重新開機，請稍候重新整理。';
+  });
+}
+
+function postOta(path, pending) {
+  document.getElementById('ota-status').textContent = pending;
+  hydraFetch(path, { method: 'POST' }).then(async response => {
+    const body = await response.json();
+    if (!response.ok || !body.ok) throw new Error(body.error || ('HTTP ' + response.status));
+    return refreshOta();
+  }).catch(error => {
+    document.getElementById('ota-status').textContent = '要求失敗：' + error.message;
+    refreshOta();
+  });
+}
+
+function checkFirmware() { postOta('/api/ota/check', '正在查詢最新版本…'); }
+
+function startFirmwareUpdate() {
+  if (!confirm('確定要更新韌體？裝置會在寫入完成後自動重新開機。')) return;
+  postOta('/api/ota/update', '正在建立更新工作…');
+}
+
 // Poll weight while settings page is open
 wtTimer = setInterval(fetchWeight, 1000);
 historyTimer = setInterval(refreshHistoryBackfill, 3000);
+otaTimer = setInterval(refreshOta, 2000);
 fetchWeight();
 refreshHistoryBackfill();
-window.addEventListener('beforeunload', () => { clearInterval(wtTimer); clearInterval(historyTimer); });
+refreshOta();
+window.addEventListener('beforeunload', () => { clearInterval(wtTimer); clearInterval(historyTimer); clearInterval(otaTimer); });
 
 // Jump to calibration if URL has #calibration
 if (location.hash === '#calibration')

@@ -49,6 +49,21 @@
 #define DEFAULT_TZ_OFFSET_SEC  (8 * 3600)
 #define DEFAULT_DST_OFFSET_SEC 0
 
+// OTA firmware update
+// Both assets are published by .github/workflows/release.yml under fixed names; the URLs
+// are baked in, so renaming a release asset breaks updates on every deployed device.
+// /releases/latest/download/ resolves only to non-draft, non-prerelease releases, which
+// makes prereleases safe for internal testing.
+#define OTA_MANIFEST_URL "https://github.com/Ning0612/esp32-hydracup/releases/latest/download/version.txt"
+#define OTA_FIRMWARE_URL "https://github.com/Ning0612/esp32-hydracup/releases/latest/download/hydracup-esp32dev-firmware.bin"
+#define OTA_OVERALL_DEADLINE_MS  (5 * 60 * 1000)
+#define OTA_HTTP_TIMEOUT_MS      15000
+#define OTA_HTTP_BUFFER_BYTES    4096
+#define OTA_MIN_FREE_HEAP_BYTES  (60 * 1024)
+// Uptime a freshly flashed image must reach, with the control task still beating, before
+// the bootloader's rollback is cancelled. Never add connectivity to this condition.
+#define OTA_MARK_VALID_DELAY_MS  30000
+
 // MQTT defaults
 #define DEFAULT_MQTT_BROKER_PORT    1883
 #define DEFAULT_MQTT_CLIENT_ID      "hydracup-device"

@@ -14,11 +14,15 @@ class ConfigManager;
 class DiscordNotifier;
 class EventLogger;
 class ReminderManager;
+class OtaUpdater;
 class ScaleManager;
 class WiFiManager;
 
 class DashboardServer {
 public:
+    // Wired through a setter rather than a 13th begin() parameter, matching how
+    // DrinkDetector's optional collaborators are attached in main.cpp.
+    void setOtaUpdater(OtaUpdater& ota) { _ota = &ota; }
     void begin(ScaleManager& scale, ConfigManager& cfgMgr, AppState& state, AppConfig& cfg,
                BuzzerController& buzzer, ReminderManager& reminder, bool logFsOk,
                RuntimeCoordinator& runtime, EventLogger& eventLogger,
@@ -66,6 +70,7 @@ private:
     EventLogger* _eventLogger = nullptr;
     DiscordNotifier* _discord = nullptr;
     CloudSyncClient* _cloudSync = nullptr;
+    OtaUpdater* _ota = nullptr;
     WiFiManager* _wifi = nullptr;
     bool _logFsOk = false;
     std::string _sessionToken;

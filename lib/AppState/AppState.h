@@ -28,5 +28,9 @@ struct AppState {
     bool               mqttConfigured = false;
     std::atomic<bool>  mqttConnected{false};
 
+    // Cross-module shed signal: writing the app partition disables the flash cache in
+    // bursts, so timing-sensitive and memory-hungry work stands down while it runs.
+    std::atomic<bool> otaInProgress{false};
+
     std::string ipAddress;
 };

@@ -47,7 +47,7 @@ void MqttPublisher::publishStatus(float currentMl, const char* event) {
 }
 
 void MqttPublisher::loop(float todayTotalMl) {
-    if (!_enabled || !_state) return;
+    if (!_enabled || !_state || _state->otaInProgress.load()) return;
     const uint32_t interval = static_cast<uint32_t>(_heartbeatSec) * 1000U;
     const uint32_t now = hal_millis();
     if (interval == 0 || now - _lastPublishMs < interval || !_state->mqttConnected.load()) return;

@@ -73,4 +73,6 @@ bool DiscordNotifier::_enqueue(TaskParam* message, bool highPriority) {
     _droppedCount++; delete message; return false;
 }
 void DiscordNotifier::_workerTask(void* param) { static_cast<DiscordNotifier*>(param)->_workerLoop(); }
-void DiscordNotifier::_workerLoop() { TaskParam* message = nullptr; for (;;) { if (xQueueReceive(_highQueue, &message, pdMS_TO_TICKS(50)) == pdTRUE || xQueueReceive(_lowQueue, &message, 0) == pdTRUE) { _send(message); message = nullptr; } } }
+// Messages stay queued while OTA runs: a second TLS session would cost ~40 KB of the heap
+// the firmware write needs, and its socket comes out of the same budget.
+void DiscordNotifier::_workerLoop() { TaskParam* message = nullptr; for (;;) { if (_state && _state->otaInProgress.load()) { vTaskDelay(pdMS_TO_TICKS(200)); continue; } if (xQueueReceive(_highQueue, &message, pdMS_TO_TICKS(50)) == pdTRUE || xQueueReceive(_lowQueue, &message, 0) == pdTRUE) { _send(message); message = nullptr; } } }
