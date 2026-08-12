@@ -130,8 +130,13 @@ HydraCup 以 PlatformIO + ESP-IDF 5.x 的 native FreeRTOS runtime 運行，分�
 `EventLogger` 不特別暫停：事件判定已停止，本來就不會有新的日誌寫入，且 ESP-IDF 的
 spi_flash 層本身有互斥，競爭只會變慢不會損毀。
 
-更新前 `requestUpdate()` 會檢查內部可用 heap 是否低於 `OTA_MIN_FREE_HEAP_BYTES`（60 KB），
-低於就直接回 `503`。寫入途中 OOM 會留下半寫入的 slot，事前拒絕遠優於此。
+`otaInProgress` 是降載訊號，不是同步屏障——各模組只在自己的迴圈頂端觀察它，已經進入 HTTPS
+請求的 worker 會持有 TLS heap 直到請求結束（其 HTTP timeout 為 10 秒）。因此下載開始前會
+**輪詢等待可用 heap 回升**（每 250 ms，最多 12 秒，超過其 HTTP timeout），而不是固定延遲：
+等待的對象直接就是真正稀缺的資源，worker 仍握著 session 正是 heap 偏低的原因。
+
+`requestUpdate()` 另有一道事前檢查，可用 heap 低於 `OTA_MIN_FREE_HEAP_BYTES`（60 KB）直接回
+`503`。寫入途中 OOM 會留下半寫入的 slot，事前拒絕遠優於此。
 
 ### 憑證信任
 

@@ -64,9 +64,12 @@
 // the bootloader's rollback is cancelled. Never add connectivity to this condition.
 #define OTA_MARK_VALID_DELAY_MS  30000
 #define OTA_MARK_VALID_RETRY_MS  5000
-// Grace period for in-flight cloud sync / Discord requests to finish after the shed flag
-// goes up, before the download starts competing with them for heap and sockets.
-#define OTA_SETTLE_DELAY_MS      1500
+// Wait for in-flight cloud sync / Discord requests to release their TLS heap after the shed
+// flag goes up. The timeout exceeds their 10 s HTTP timeout so a request that is already
+// blocked still gets to finish rather than making the update fail.
+#define OTA_SETTLE_MIN_MS        1000
+#define OTA_SETTLE_POLL_MS       250
+#define OTA_SETTLE_TIMEOUT_MS    12000
 
 // MQTT defaults
 #define DEFAULT_MQTT_BROKER_PORT    1883
