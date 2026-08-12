@@ -1,5 +1,21 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32">
+  <!-- Mirrors the topbar brand mark, which is drawn in CSS (.brand-mark and its
+       ::before droplet / ::after shadow). Proportions are the CSS box scaled to fit:
+       cup 35x38 with 3px/10px corner radii, water at the bottom 40%, droplet offset
+       past the top-right corner, elliptical shadow below. -->
   <rect width="32" height="32" fill="#263a34"/>
-  <rect x="3" y="3" width="26" height="26" fill="none" stroke="#a8d2c4" stroke-width="2"/>
-  <text x="16" y="20" fill="#a8d2c4" text-anchor="middle" font-family="Consolas,monospace" font-size="10" font-weight="700">HC</text>
+  <!-- The composition is centred on (15.5,15.5); scaling it up fills the canvas so the
+       cup is still readable at the 16px tab size. -->
+  <g transform="translate(15.5 15.5) scale(1.12) translate(-15.5 -15.5)">
+  <ellipse cx="15.5" cy="26.9" rx="11.9" ry="2.45" fill="none" stroke="#76d5ca"
+           stroke-opacity=".55" stroke-width=".9"/>
+  <clipPath id="cup">
+    <path d="M7.8 6.9A.6.6 0 0 1 8.4 6.3H22.6a.6.6 0 0 1 .6.6V19.9A3.8 3.8 0 0 1 19.4 23.7H11.6A3.8 3.8 0 0 1 7.8 19.9Z"/>
+  </clipPath>
+  <rect x="7" y="16.7" width="17" height="8" fill="#76d5ca" fill-opacity=".62" clip-path="url(#cup)"/>
+  <path d="M7 6.9A1.4 1.4 0 0 1 8.4 5.5H22.6A1.4 1.4 0 0 1 24 6.9V19.9A4.6 4.6 0 0 1 19.4 24.5H11.6A4.6 4.6 0 0 1 7 19.9Z"
+        fill="none" stroke="#7fe1d5" stroke-width="1.6"/>
+  <ellipse cx="25.45" cy="4.25" rx="1.95" ry="2.65" fill="#d99a3f"
+           transform="rotate(12 25.45 4.25)"/>
+  </g>
 </svg>
