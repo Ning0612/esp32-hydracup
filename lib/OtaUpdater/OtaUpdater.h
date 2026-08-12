@@ -52,6 +52,13 @@ void ota_boot_check();
 bool ota_pending_verify();
 void ota_mark_app_valid_if_due(bool controlHealthy);
 
+// Serialises static-file reads against the in-place webfs rewrite. httpd serves pages from
+// its own task, so without this it is free to be inside fread() on a filesystem that is
+// about to be unmounted and erased. Returns false when webfs is unavailable, in which case
+// webfs_read_end() must not be called.
+bool webfs_read_begin();
+void webfs_read_end();
+
 class OtaUpdater {
 public:
     bool init(AppState& state, RuntimeCoordinator& runtime);
