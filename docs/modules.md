@@ -375,6 +375,10 @@ TLS 與 image header 只證明完整性，不證明身分。
 比對 `hydracup-esp32dev-littlefs.bin` 的雜湊與 NVS（`ota` / `webfs_sha`）記錄的已安裝值，
 不同才卸載 `/webfs`、抹除分割區、邊下載邊以 4 KB 寫入並累算 SHA-256，寫完比對相符才記錄新雜湊。
 
+webfs 的下載必須**自行跟隨轉址**：`esp_http_client` 只在 `esp_http_client_perform()` 內處理
+301/302，而這裡走的是可邊下載邊寫入的 `open()`／`fetch_headers()`／`read()` 串流流程，
+GitHub 的 302 會原封不動回傳。韌體那半不受影響，因為 `esp_https_ota` 內部走會處理轉址的路徑。
+
 webfs 沒有 A/B 備援也放不進 RAM，寫入是就地覆蓋，中途失敗即損毀，需 USB `uploadfs` 復原——
 這是明確接受的取捨。順序不可對調（先 webfs 後韌體會留下「網頁比韌體新」的組合），且韌體一旦
 寫入成功就一定重新開機，即使 webfs 失敗。不改用「直接雜湊分割區」判斷是否需要更新，因為

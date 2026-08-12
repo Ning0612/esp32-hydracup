@@ -64,6 +64,8 @@
 #define OTA_WEBFS_ASSET    "hydracup-esp32dev-littlefs.bin"
 #define OTA_WEBFS_LABEL    "webfs"
 #define OTA_WEBFS_CHUNK    4096
+// GitHub sends one redirect to its asset CDN; the allowance leaves room for another hop.
+#define OTA_MAX_REDIRECTS  4
 #define OTA_WEBFS_DEADLINE_MS    (3 * 60 * 1000)
 #define OTA_OVERALL_DEADLINE_MS  (5 * 60 * 1000)
 #define OTA_HTTP_TIMEOUT_MS      15000
