@@ -131,7 +131,15 @@ void DashboardServer::_sendJson(httpd_req_t* request, const std::string& json, i
 }
 
 void DashboardServer::_handleStatic(httpd_req_t* request, const char* path, const char* contentType) {
-    if (!_state->fsOk || !http_send_file(request, path, contentType))
+    // webfs_read_begin() holds off while an OTA replaces the partition, so a page request can
+    // never be inside fread() when the filesystem is unmounted underneath it.
+    if (!_state->fsOk || !webfs_read_begin()) {
+        http_send(request, "text/plain", "Web assets unavailable. Run: pio run -t uploadfs", 503);
+        return;
+    }
+    const bool sent = http_send_file(request, path, contentType);
+    webfs_read_end();
+    if (!sent)
         http_send(request, "text/plain", "Web assets unavailable. Run: pio run -t uploadfs", 503);
 }
 

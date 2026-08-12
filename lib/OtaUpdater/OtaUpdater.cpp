@@ -115,6 +115,19 @@ void trimVersionText(char* text) {
 std::atomic<bool> g_pendingVerify{false};
 std::atomic<bool> g_verifyResolved{false};
 
+// Created in ota_boot_check(), which runs before any task that could contend for it.
+SemaphoreHandle_t g_webfsMutex = nullptr;
+bool g_webfsAvailable = true;  // guarded by g_webfsMutex
+
+bool remountWebfs() {
+    esp_vfs_littlefs_conf_t conf = {};
+    conf.base_path = "/webfs";
+    conf.partition_label = OTA_WEBFS_LABEL;
+    conf.format_if_mount_failed = false;
+    conf.dont_mount = false;
+    return esp_vfs_littlefs_register(&conf) == ESP_OK;
+}
+
 bool isHex64(const char* text) {
     for (int i = 0; i < 64; ++i) {
         const char c = text[i];
@@ -188,7 +201,22 @@ bool saveInstalledWebfsSha(const char* sha) {
 
 }  // namespace
 
+bool webfs_read_begin() {
+    if (!g_webfsMutex) return true;  // never initialised: behave as before this guard existed
+    if (xSemaphoreTake(g_webfsMutex, pdMS_TO_TICKS(2000)) != pdTRUE) return false;
+    if (!g_webfsAvailable) {
+        xSemaphoreGive(g_webfsMutex);
+        return false;
+    }
+    return true;
+}
+
+void webfs_read_end() {
+    if (g_webfsMutex) xSemaphoreGive(g_webfsMutex);
+}
+
 void ota_boot_check() {
+    if (!g_webfsMutex) g_webfsMutex = xSemaphoreCreateMutex();
     const esp_partition_t* running = esp_ota_get_running_partition();
     esp_ota_img_states_t imageState = ESP_OTA_IMG_UNDEFINED;
     const bool pending = running && esp_ota_get_state_partition(running, &imageState) == ESP_OK &&
@@ -585,7 +613,16 @@ bool OtaUpdater::_updateWebfs(const char* expectedSha) {
         _status.imageSize = static_cast<uint32_t>(contentLength);
         xSemaphoreGive(_statusMutex);
 
-        // Unmount before touching the partition; static pages 404 until the reboot below.
+        // Take the read lock so no static-file request is inside fread() when the mount goes
+        // away, then mark webfs unavailable while still holding it: a request that passed the
+        // check can therefore never reach the filesystem after this point. If httpd is stuck
+        // streaming for this long, skip webfs rather than race it - the firmware is already in.
+        if (g_webfsMutex && xSemaphoreTake(g_webfsMutex, pdMS_TO_TICKS(10000)) != pdTRUE) {
+            _setMessage("網頁資源忙碌中，本次略過更新");
+            break;
+        }
+        g_webfsAvailable = false;
+        if (g_webfsMutex) xSemaphoreGive(g_webfsMutex);
         esp_vfs_littlefs_unregister(OTA_WEBFS_LABEL);
         unmounted = true;
         if (esp_partition_erase_range(partition, 0, partition->size) != ESP_OK) {
@@ -668,7 +705,15 @@ bool OtaUpdater::_updateWebfs(const char* expectedSha) {
     esp_http_client_close(client);
     esp_http_client_cleanup(client);
     heap_caps_free(buffer);
-    if (!ok && unmounted) LOG_WARN(TAG, "webfs left unmounted after a failed write");
+    // A reboot follows either way, but do not leave the mount missing in the meantime - and a
+    // checksum mismatch still leaves a complete image behind, which usually mounts fine.
+    if (unmounted && remountWebfs()) {
+        if (g_webfsMutex) xSemaphoreTake(g_webfsMutex, portMAX_DELAY);
+        g_webfsAvailable = true;
+        if (g_webfsMutex) xSemaphoreGive(g_webfsMutex);
+    } else if (unmounted) {
+        LOG_WARN(TAG, "webfs could not be remounted; USB uploadfs required");
+    }
     return ok;
 }
 
