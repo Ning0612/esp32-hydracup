@@ -151,7 +151,17 @@
   </section>
 
   <hr class="divider">
-  <section id="calibration" class="card"><h2><span>09</span>秤重校正</h2>
+  <section id="password" class="card"><h2><span>09</span>變更管理密碼</h2>
+    <p class="section-note">變更後目前的登入階段會結束，需要以新密碼重新登入。至少 8 個字元。</p>
+    <div class="field"><label for="pw-cur">目前密碼</label><input type="password" id="pw-cur" autocomplete="current-password"></div>
+    <div class="field"><label for="pw-new">新密碼</label><input type="password" id="pw-new" autocomplete="new-password"></div>
+    <div class="field"><label for="pw-confirm">再次輸入新密碼</label><input type="password" id="pw-confirm" autocomplete="new-password"></div>
+    <div class="actions"><button class="btn btn-primary" type="button" onclick="changePassword()">變更密碼</button></div>
+    <output id="pw-msg" aria-live="polite"></output>
+  </section>
+
+  <hr class="divider">
+  <section id="calibration" class="card"><h2><span>10</span>秤重校正</h2>
     <p class="section-note">先移除所有重物歸零，再放上已知重量完成校正。</p>
     <div class="metric-grid compact-grid">
       <div class="metric"><label>目前校正因子</label><span id="cur-factor">--</span></div>
@@ -163,7 +173,7 @@
 </section>
 
   <hr class="divider">
-  <section id="clear-history" class="card danger-card"><h2><span>10</span>清除飲水紀錄</h2>
+  <section id="clear-history" class="card danger-card"><h2><span>11</span>清除飲水紀錄</h2>
     <p class="section-note">刪除裝置上所有飲水月檔與尚未上傳的同步佇列，並將今日累計與飲水次數歸零。<strong>此操作無法復原</strong>。裝置會重新啟動以完成清除——清除在開機時進行，此時沒有任何程序正在寫入紀錄。已同步到雲端的資料、校正值、WiFi 與其他設定都不受影響。</p>
     <div class="field"><label for="clear-pw">請再次輸入管理密碼以確認</label><input type="password" id="clear-pw" autocomplete="current-password" placeholder="管理密碼"></div>
     <div class="actions"><button class="btn btn-danger" type="button" onclick="clearHistory()">清除並重新啟動</button></div>
@@ -518,6 +528,35 @@ function clearHistory() {
     input.value = '';
     output.textContent = '裝置正在重新啟動，紀錄會在開機時清除。請稍候重新整理。';
   }).catch(error => { output.textContent = '清除失敗：' + error.message; });
+}
+
+const PW_ERRORS = {
+  invalid_credentials: '目前密碼不正確。',
+  rate_limited: '嘗試次數過多，請稍後再試。',
+  weak_or_mismatched_password: '新密碼至少 8 個字元，且兩次輸入必須相同。',
+  password_persist_failed: '寫入失敗，密碼未變更，原密碼仍然有效。',
+  invalid_request: '請求格式錯誤。'
+};
+
+function changePassword() {
+  const cur = document.getElementById('pw-cur');
+  const next = document.getElementById('pw-new');
+  const confirm = document.getElementById('pw-confirm');
+  const output = document.getElementById('pw-msg');
+  if (!cur.value || !next.value) { output.textContent = '請填寫目前密碼與新密碼。'; return; }
+  if (next.value.length < 8) { output.textContent = '新密碼至少 8 個字元。'; next.focus(); return; }
+  if (next.value !== confirm.value) { output.textContent = '兩次輸入的新密碼不相同。'; confirm.focus(); return; }
+  output.textContent = '正在變更…';
+  hydraFetch('/api/auth/password', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ current: cur.value, next: next.value, confirm: confirm.value })
+  }).then(async response => {
+    const data = await response.json();
+    if (!response.ok || !data.ok) throw new Error(PW_ERRORS[data.error] || ('HTTP ' + response.status));
+    cur.value = next.value = confirm.value = '';
+    output.textContent = '密碼已變更，即將前往登入頁。';
+    setTimeout(() => location.replace('/login'), 1200);
+  }).catch(error => { output.textContent = '變更失敗：' + error.message; });
 }
 
 function checkFirmware() { postOta('/api/ota/check', '正在查詢最新版本…'); }
