@@ -272,6 +272,7 @@ esp_err_t DashboardServer::_handleGet(httpd_req_t* request) {
         cJSON_AddNumberToObject(doc, "bytes_read", ota.bytesRead);
         cJSON_AddNumberToObject(doc, "last_http_status", ota.lastHttpStatus);
         cJSON_AddStringToObject(doc, "message", ota.message);
+        cJSON_AddStringToObject(doc, "last_outcome", ota.lastOutcome);
         cJSON_AddBoolToObject(doc, "pending_verify", ota.pendingVerify);
         _sendJson(request, jsonString(doc)); cJSON_Delete(doc); return ESP_OK;
     }

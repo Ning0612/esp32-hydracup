@@ -187,6 +187,28 @@ bool loadInstalledWebfsSha(char* out) {
     return ok;
 }
 
+void loadLastOutcome(char* out, size_t outLength) {
+    out[0] = '\0';
+    if (!lockNvs()) return;
+    nvs_handle_t handle = 0;
+    if (nvs_open("ota", NVS_READONLY, &handle) == ESP_OK) {
+        size_t length = outLength;
+        if (nvs_get_str(handle, "last_msg", out, &length) != ESP_OK) out[0] = '\0';
+        nvs_close(handle);
+    }
+    unlockNvs();
+}
+
+void saveLastOutcome(const char* message) {
+    if (!lockNvs()) return;
+    nvs_handle_t handle = 0;
+    if (nvs_open("ota", NVS_READWRITE, &handle) == ESP_OK) {
+        if (nvs_set_str(handle, "last_msg", message) == ESP_OK) nvs_commit(handle);
+        nvs_close(handle);
+    }
+    unlockNvs();
+}
+
 bool saveInstalledWebfsSha(const char* sha) {
     if (!lockNvs()) return false;
     nvs_handle_t handle = 0;
@@ -279,7 +301,9 @@ bool OtaUpdater::init(AppState& state, RuntimeCoordinator& runtime) {
         return false;
     }
     std::snprintf(_status.runningVersion, sizeof(_status.runningVersion), "%s", APP_VERSION);
+    loadLastOutcome(_status.lastOutcome, sizeof(_status.lastOutcome));
     _publishRunningPartition();
+    if (_status.lastOutcome[0]) LOG_INFO(TAG, "last update outcome: %s", _status.lastOutcome);
     _task = xTaskCreateStaticPinnedToCore(_taskFunc, "ota_worker", OTA_TASK_STACK_BYTES, this,
                                           OTA_TASK_PRIORITY, s_taskStack, &s_taskBuffer,
                                           OTA_TASK_CORE);
@@ -796,6 +820,8 @@ void OtaUpdater::_runUpdate() {
     std::snprintf(_status.message, sizeof(_status.message), "韌體更新完成 · %s · 即將重新開機",
                   webfsOutcome);
     xSemaphoreGive(_statusMutex);
+    // Recorded before the restart so the result is still readable afterwards.
+    saveLastOutcome(snapshot().message);
     LOG_INFO(TAG, "update complete, restarting");
     vTaskDelay(pdMS_TO_TICKS(OTA_REBOOT_DELAY_MS));
     esp_restart();
