@@ -13,6 +13,7 @@
 #include "ConfigManager.h"
 #include "DiscordNotifier.h"
 #include "EventLogger.h"
+#include "HistoryMaintenance.h"
 #include "OtaUpdater.h"
 #include "ReminderManager.h"
 #include "ScaleManager.h"
@@ -306,6 +307,31 @@ esp_err_t DashboardServer::_handlePost(httpd_req_t* request) {
         if (!_cloudSync || !_cloudSync->isConfigured()) { _sendJson(request, "{\"ok\":false,\"error\":\"cloud_not_configured\"}", 409); return ESP_OK; }
         if (!_cloudSync->requestHistoryBackfill()) { _sendJson(request, "{\"ok\":false,\"error\":\"history_backfill_queue_failed\"}", 503); return ESP_OK; }
         _sendJson(request, "{\"ok\":true,\"state\":\"queued\"}", 202); return ESP_OK;
+    }
+    if (uri == "/api/logs/clear") {
+        if (!_requireApiAuth(request, true)) return ESP_OK;
+        // Destructive and irreversible, so the session alone is not enough: re-prove the
+        // password, and count failures towards the same lockout the login endpoint uses so
+        // this cannot become a brute-force oracle for an unattended tab.
+        const std::string ip = http_client_ip(request);
+        if (_isRateLimited(ip)) { _sendJson(request, "{\"ok\":false,\"error\":\"rate_limited\"}", 429); return ESP_OK; }
+        doc = parseBody(request, body);
+        const std::string password = doc ? stringValue(doc, "password") : std::string();
+        if (doc) cJSON_Delete(doc);
+        if (password.empty() || password.size() > 128 || _cfg->adminPasswordHash.empty() ||
+            !http_verify_password_hash(password, _cfg->adminPasswordHash)) {
+            _recordAuthFailure(ip);
+            _sendJson(request, "{\"ok\":false,\"error\":\"invalid_credentials\"}", 401); return ESP_OK;
+        }
+        // Only records the request; the wipe itself runs on the next boot, where nothing is
+        // writing to the data being erased. See lib/HistoryMaintenance.
+        if (!history_request_clear()) {
+            _sendJson(request, "{\"ok\":false,\"error\":\"request_not_stored\"}", 500); return ESP_OK;
+        }
+        LOG_INFO(TAG, "drink history clear requested by %s", ip.c_str());
+        _sendJson(request, "{\"ok\":true,\"state\":\"restarting\"}");
+        http_restart_after_response();
+        return ESP_OK;
     }
     if (uri == "/api/ota/check" || uri == "/api/ota/update") {
         if (!_requireApiAuth(request, true)) return ESP_OK;

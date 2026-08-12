@@ -362,6 +362,45 @@ logfs 不可用回 `503 logfs_unavailable`；Cloud sync 未完整設定回
 
 ---
 
+### `POST /api/logs/clear`
+
+需要登入與 CSRF token，**並在 body 再次提供管理密碼**。session 本身不足以授權這個操作，
+因為它無法復原。
+
+```json
+{"password": "..."}
+```
+
+**這個端點不會當場清除任何東西。** 它只把要求記在 NVS，回應後重新啟動；真正的清除發生在
+下次開機、掛載檔案系統之前。回應為 `{"ok": true, "state": "restarting"}`。
+
+清除內容：格式化整個 `logfs`（飲水月檔 `/logfs/logs/drink-*.jsonl` 與尚未上傳的同步佇列
+`/logfs/cloud/outbox.jsonl`）、NVS `drink_ctr` 的今日累計與飲水次數、以及 `cloud_sync` 的
+`evt_overflow` 溢位暫存（留著會把剛刪掉的事件放回佇列）。
+
+**不會**刪除已同步到雲端的資料，也不動 `cloud_sync` 的 sequence 狀態、校正值、WiFi 或其他設定。
+
+| 狀態 | 錯誤 | 條件 |
+|---|---|---|
+| 401 | `invalid_credentials` | 密碼錯誤、未設定或超過 128 bytes。失敗計入與登入相同的鎖定機制 |
+| 429 | `rate_limited` | 密碼嘗試次數過多 |
+| 500 | `request_not_stored` | 要求無法寫入 NVS，**沒有排定任何清除** |
+
+#### 為什麼在開機時清除
+
+在系統運行中清除，等於要和每一個正在寫入這些資料的來源賽跑：EventLogger 佇列中的事件
+（包含已出佇列、正等待檔案系統鎖的那一筆）、計數器儲存的佇列與重試路徑、開機時仍在讀取
+舊值的 NVS restore，以及 Cloud sync 在鎖內讀出、鎖外送出的批次。每一項都需要各自的屏障，
+而檔案清除與計數清除之間仍然無法對「剛好在此時發生的一次飲水」保持原子性。
+
+開機時這些都還不存在——沒有任何 task 被建立、分割區也尚未掛載，清除因此是一條沒有併發的
+直線。`/logfs/logs` 與 `/logfs/cloud` 由 `EventLogger` 與 `CloudSyncClient` 在同一次開機的
+初始化中重建，不需要額外處理。
+
+若清除未能完成（例如格式化失敗），NVS 中的要求旗標會保留，下次開機再試一次。
+
+---
+
 ### `GET /api/ota/status`
 
 需要登入。回傳韌體更新的完整狀態快照。只在 Normal Mode 下註冊；AP Mode 沒有外網，

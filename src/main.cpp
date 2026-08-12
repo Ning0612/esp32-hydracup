@@ -14,6 +14,7 @@
 #include "DisplayManager.h"
 #include "DrinkDetector.h"
 #include "EventLogger.h"
+#include "HistoryMaintenance.h"
 #include "MqttPublisher.h"
 #include "OtaUpdater.h"
 #include "ReminderManager.h"
@@ -251,6 +252,8 @@ extern "C" void app_main(void) {
     const esp_err_t nvsResult = nvs_flash_init();
     if (nvsResult != ESP_OK) { LOG_ERROR(TAG, "NVS init failed: %s", esp_err_to_name(nvsResult)); return; }
     ota_boot_check();
+    // Before the mounts and before any task exists, so a wipe has nothing to race.
+    history_apply_pending_clear();
     mountFilesystems(); configManager.load(appConfig); dailyGoalMl = appConfig.dailyGoalMl;
     reminderEnabledSetting = appConfig.reminderEnabled;
     reminderIntervalMinSetting = appConfig.reminderIntervalMin;
