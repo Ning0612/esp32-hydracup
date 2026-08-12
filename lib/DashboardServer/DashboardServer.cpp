@@ -257,6 +257,7 @@ esp_err_t DashboardServer::_handleGet(httpd_req_t* request) {
         cJSON_AddStringToObject(doc, "running_version", ota.runningVersion);
         cJSON_AddStringToObject(doc, "latest_version", ota.latestVersion);
         cJSON_AddStringToObject(doc, "running_partition", ota.runningPartition);
+        cJSON_AddStringToObject(doc, "stage", ota.stage);
         cJSON_AddNumberToObject(doc, "progress_percent", ota.progressPercent);
         cJSON_AddNumberToObject(doc, "image_size", ota.imageSize);
         cJSON_AddNumberToObject(doc, "bytes_read", ota.bytesRead);

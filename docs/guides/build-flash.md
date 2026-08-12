@@ -99,9 +99,12 @@ pio run -e esp32dev --target uploadfs   # webfs（設定頁的韌體更新卡片
 是 **bootloader** 的行為，只有重燒 bootloader 才會生效。若沒重燒就跑新韌體，開機會把
 `ota_state` 設成 PENDING_VERIFY 而舊 bootloader 不認得——不會變磚，但回滾功能會靜默失效。
 
-**OTA 不會更新 `webfs`。** app slot 之外的分割區都不在 OTA 範圍內，所以設定頁本身改版時
-仍需 `uploadfs`。為了讓舊版 UI 能顯示新韌體的狀態，`/api/ota/status` 的欄位只增不改，
-且所有面向使用者的文字都由韌體回傳。
+**v0.7.0 起 OTA 會一併更新 `webfs`**（先韌體後網頁，僅在 `SHA256SUMS` 的雜湊與 NVS 記錄的
+已安裝值不同時才重寫）。但 webfs 只有一塊分割區、沒有 A/B 備援，寫入是就地覆蓋——中途失敗
+會使靜態頁面損毀，需以 `uploadfs` 復原（此時 `/api/*` 仍正常，因為 API 由韌體提供）。
+
+因此 `/api/ota/status` 的欄位仍維持只增不改，所有面向使用者的文字也仍由韌體回傳：裝置可能
+處於「UI 比韌體舊」的狀態（webfs 寫入被跳過或失敗、或以 USB 燒入舊映像）。
 
 `sdkconfig.defaults` 中與 OTA 直接相關的設定：
 
