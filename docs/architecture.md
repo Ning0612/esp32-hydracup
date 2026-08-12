@@ -72,6 +72,7 @@ HydraCup 以 PlatformIO + ESP-IDF 5.x 的 native FreeRTOS runtime 運行，分�
 | `DisplayManager` | SSD1306 OLED 輪播（2 頁，各 4 秒），自動睡眠 |
 | `DiscordNotifier` | 非同步 HTTPS POST 至 Discord Webhook |
 | `EventLogger` | LittleFS JSONL 飲水事件日誌（依月份分檔） |
+| `OtaUpdater` | GitHub Releases 版本檢查與 `esp_https_ota` 韌體寫入；含開機確認與 rollback |
 | `TimeManager` | NTP 時間同步；提供 ISO-8601 時戳 |
 | `DailySummaryManager` | 每日午夜聚合統計並送出 Discord 摘要 |
 | `RuntimeCoordinator` | 一致 runtime snapshot、control command/result Queue |
@@ -87,6 +88,7 @@ HydraCup 以 PlatformIO + ESP-IDF 5.x 的 native FreeRTOS runtime 運行，分�
 ```
 1. `app_main()` 開始，ESP-IDF logging 以 115200 baud 輸出
 2. `nvs_flash_init()`             → NVS 設定與計數器
+2b. `ota_boot_check()`            → 記錄本次映像是否待確認（兩種模式都執行）
 3. `esp_vfs_littlefs_register()`  → `/webfs` 與 `/logfs`
 4. `ConfigManager.load(cfg)`      → 從 NVS 讀取設定
 5. `DisplayManager.init()`        → 失敗則記錄並繼續
@@ -96,7 +98,7 @@ HydraCup 以 PlatformIO + ESP-IDF 5.x 的 native FreeRTOS runtime 運行，分�
    ├─ WiFi SSID 空白 → AP_MODE
    ├─ 連線失敗       → AP_MODE
    └─ 連線成功       → NORMAL
-9. NORMAL：初始化 NTP、Discord、MQTT、EventLogger、DailySummary 與 DashboardServer
+9. NORMAL：初始化 NTP、Discord、MQTT、EventLogger、DailySummary、DashboardServer 與 OtaUpdater
 10. AP_MODE：初始化 ConfigPortal（HTTP server @ `192.168.4.1`）
 11. 建立 `hydracup_control`（Core 1）與 `hydracup_service` task
 12. `esp_http_server` 自己處理 Dashboard／ConfigPortal request callback
@@ -105,6 +107,41 @@ HydraCup 以 PlatformIO + ESP-IDF 5.x 的 native FreeRTOS runtime 運行，分�
 外設（OLED、HX711）初始化失敗時**不中斷開機**，僅記錄錯誤並設
 `AppState.oledOk = false` / `hx711Ok = false`。LittleFS mount 使用
 `format_if_mount_failed = false`，因此 mount 失敗時不會自動格式化或清除資料。
+
+---
+
+## OTA 期間的併發降載
+
+`esp_ota_write()` 內部呼叫 `spi_flash_disable_interrupts_caches_and_other_cpu()`，寫入
+1 MB 級映像期間會分成約 300 次 4 KB 寫入，每次停用兩顆 core 的 flash cache 數百 µs 至數 ms。
+`CONFIG_ESP_TASK_WDT_TIMEOUT_S=5`，單次停用遠低於此，不會誤觸發 watchdog。
+
+`OtaUpdater` 只設定 `AppState::otaInProgress`（atomic），各模組在自己的迴圈頂端輪詢降載，
+沒有任何模組被 OTA 直接呼叫：
+
+| 子系統 | 處置 | 理由 |
+|---|---|---|
+| `drinkDetector.update()` 事件判定 | 跳過 | HX711 是時序敏感的 bit-bang，cache 停用造成的抖動會讓 24-bit 讀值失真，記入假事件會汙染 logfs 與雲端資料 |
+| `ScaleManager` 取樣 | **不停** | 停掉會讓 Web 的重量顯示卡在舊值，體驗更差；資料只是暫時不可信 |
+| `cloud_sync` / `discord_worker` | 暫停 | 各自的 mbedtls session 約 40 KB heap 與 1 個 socket，與韌體寫入直接競爭 |
+| MQTT 心跳 | 暫停 | 省下 socket 預算 |
+| `esp_http_server` | **不停** | 必須持續回報進度 |
+
+`EventLogger` 不特別暫停：事件判定已停止，本來就不會有新的日誌寫入，且 ESP-IDF 的
+spi_flash 層本身有互斥，競爭只會變慢不會損毀。
+
+更新前 `requestUpdate()` 會檢查內部可用 heap 是否低於 `OTA_MIN_FREE_HEAP_BYTES`（60 KB），
+低於就直接回 `503`。寫入途中 OOM 會留下半寫入的 slot，事前拒絕遠優於此。
+
+### 憑證信任
+
+OTA 是唯一一條「壞掉之後無法用自己修好自己」的路徑，所以**不釘選根憑證**：GitHub 會把
+release 資產 302 轉址到 `objects.githubusercontent.com`，兩個網域的憑證鏈由 GitHub 自行輪換，
+釘選失效等於同時失去發佈修正的能力。改用 ESP-IDF 內建 CA bundle 的 CMN 子集（41 張、約
+18 KB，涵蓋 DigiCert、Sectigo、ISRG、Amazon、GTS）。
+
+`CloudSyncClient` 與 `DiscordNotifier` 維持既有的釘選 PEM——對端是自己可控的服務或固定的
+第三方 API，釘選在那裡是更強的保證。
 
 ---
 

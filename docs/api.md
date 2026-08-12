@@ -362,6 +362,73 @@ logfs 不可用回 `503 logfs_unavailable`；Cloud sync 未完整設定回
 
 ---
 
+### `GET /api/ota/status`
+
+需要登入。回傳韌體更新的完整狀態快照。只在 Normal Mode 下註冊；AP Mode 沒有外網，
+`OtaUpdater` 不會建立，此時回 `503 ota_unavailable`。
+
+```json
+{
+  "ok": true,
+  "check_state": "update_available",
+  "update_state": "idle",
+  "running_version": "0.6.0",
+  "latest_version": "0.6.1",
+  "running_partition": "app0",
+  "progress_percent": 0,
+  "image_size": 0,
+  "bytes_read": 0,
+  "last_http_status": 200,
+  "message": "有新版本 0.6.1 可更新",
+  "pending_verify": false
+}
+```
+
+| 欄位 | 說明 |
+|---|---|
+| `check_state` | `unknown` / `checking` / `up_to_date` / `update_available` / `check_failed` |
+| `update_state` | `idle` / `downloading` / `writing` / `ready_pending_reboot` / `failed` |
+| `message` | 面向使用者的中文說明，**由韌體產生**。web 資產不隨 OTA 更新，舊版 UI 必須能顯示新韌體的狀態與錯誤，因此前端只做渲染、不自行組字串 |
+| `pending_verify` | 目前執行的映像尚未確認。控制任務持續心跳滿 30 秒後自動確認；在此之前重新開機會回滾到前一個 slot |
+
+此端點的 JSON 欄位**只增不改**——移除或改名會讓尚未以 USB 更新 web 資產的裝置顯示錯誤。
+
+---
+
+### `POST /api/ota/check`
+
+需要登入與 CSRF token。向 GitHub Releases 查詢最新版本（`version.txt` 固定資產），
+與韌體內的 `APP_VERSION` 做 SemVer 比對，只有**嚴格大於**才視為有更新。
+
+成功回 `200 {"ok": true, "state": "checking"}`。實際結果由 `GET /api/ota/status` 查詢。
+
+進行中回 `409 ota_busy`；未連上 WiFi 回 `503 offline`。
+
+---
+
+### `POST /api/ota/update`
+
+需要登入與 CSRF token。下載韌體寫入備用 app slot，完成後約 2.5 秒自動重新開機。
+必須先呼叫 `/api/ota/check` 且結果為 `update_available`。
+
+成功排入回 `202`：
+
+```json
+{"ok": true, "state": "queued"}
+```
+
+| 狀態 | 錯誤 | 條件 |
+|---|---|---|
+| 409 | `ota_busy` | 已有檢查或更新進行中 |
+| 409 | `no_update_available` | 尚未檢查，或目前已是最新版 |
+| 503 | `insufficient_memory` | 內部可用 heap 低於 60 KB。寧可拒絕，也不要在寫入途中 OOM 而留下半寫入的 slot |
+| 503 | `offline` | 未連上 WiFi |
+
+更新期間裝置會主動降載：暫停飲水事件判定、Cloud sync、Discord 通知與 MQTT 心跳
+（詳見 `docs/architecture.md`）。失敗不影響目前執行的韌體，可直接重試。
+
+---
+
 ## ConfigPortal（AP Mode）
 
 AP Mode 下（WiFi 未設定或連線失敗）運行，固定位址 `192.168.4.1`。首次尚未設定管理
