@@ -595,14 +595,34 @@ bool OtaUpdater::_updateWebfs(const char* expectedSha) {
     mbedtls_sha256_context sha;
     mbedtls_sha256_init(&sha);
     do {
-        if (esp_http_client_open(client, 0) != ESP_OK) {
-            _setMessage("網頁資源下載無法開始");
-            break;
+        // Redirects have to be followed by hand here. esp_http_client only resolves them
+        // inside esp_http_client_perform(); the open/fetch_headers/read flow used for
+        // streaming hands the 302 straight back. GitHub always redirects release assets to
+        // objects.githubusercontent.com, so without this every webfs download fails at the
+        // first response.
+        int contentLength = 0;
+        int status = 0;
+        bool opened = false;
+        for (int hop = 0; hop <= OTA_MAX_REDIRECTS; ++hop) {
+            if (esp_http_client_open(client, 0) != ESP_OK) {
+                _setMessage("網頁資源下載無法開始");
+                break;
+            }
+            opened = true;
+            contentLength = esp_http_client_fetch_headers(client);
+            status = esp_http_client_get_status_code(client);
+            if (status != 301 && status != 302 && status != 303 && status != 307 && status != 308) break;
+            if (hop == OTA_MAX_REDIRECTS) {
+                _setMessage("網頁資源轉址次數過多（%d 次）", hop);
+                status = -1;
+                break;
+            }
+            esp_http_client_set_redirection(client);
+            esp_http_client_close(client);
+            opened = false;
         }
-        const int contentLength = esp_http_client_fetch_headers(client);
-        const int status = esp_http_client_get_status_code(client);
-        if (status < 200 || status >= 300) {
-            _setMessage("網頁資源下載失敗（HTTP %d）", status);
+        if (!opened || status < 200 || status >= 300) {
+            if (opened) _setMessage("網頁資源下載失敗（HTTP %d）", status);
             break;
         }
         if (contentLength <= 0 || static_cast<size_t>(contentLength) > partition->size) {
@@ -749,6 +769,7 @@ void OtaUpdater::_runUpdate() {
     // better than the old one even if the web assets did not make it.
     char installedWebfsSha[65] = {};
     loadInstalledWebfsSha(installedWebfsSha);
+    char webfsDetail[sizeof(OtaStatus::message)] = {};
     const char* webfsOutcome = "網頁資源無校驗資訊，維持原樣";
     if (haveWebfsSha && std::strcmp(installedWebfsSha, expectedWebfsSha) == 0) {
         webfsOutcome = "網頁資源已是最新";
@@ -756,9 +777,15 @@ void OtaUpdater::_runUpdate() {
     } else if (haveWebfsSha) {
         _setStage("webfs");
         _setMessage("開始更新網頁資源");
-        webfsOutcome = _updateWebfs(expectedWebfsSha)
-                           ? "網頁資源已更新"
-                           : "網頁資源更新失敗，需以 USB 重新燒錄";
+        if (_updateWebfs(expectedWebfsSha)) {
+            webfsOutcome = "網頁資源已更新";
+        } else {
+            // Carry the specific reason through. A generic "failed" hides which step gave up,
+            // and wrongly implies a USB reflash even when the partition was never touched.
+            const OtaStatus failure = snapshot();
+            std::snprintf(webfsDetail, sizeof(webfsDetail), "%s", failure.message);
+            webfsOutcome = webfsDetail;
+        }
     } else {
         LOG_WARN(TAG, "SHA256SUMS unavailable (HTTP %d), leaving webfs untouched", checksumStatus);
     }
