@@ -21,14 +21,17 @@ jobs:
         id: version
         run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
 
-      # Devices compare the running APP_VERSION against version.txt. If the tag and the
-      # header disagree, every device either never updates or tries to "update" backwards.
-      - name: Check version.h matches the tag
+      # version.txt is ESP-IDF's PROJECT_VER, so it ends up in the app descriptor that the
+      # device checks after downloading; include/version.h is what the running firmware
+      # reports. All three must agree or devices either never update, try to "update"
+      # backwards, or reject the image they just downloaded.
+      - name: Check versions agree with the tag
         run: |
           header=$(sed -n 's/^#define APP_VERSION  *"\(.*\)"/\1/p' include/version.h)
-          echo "tag=${{ steps.version.outputs.version }} version.h=${header}"
-          if [ "$header" != "${{ steps.version.outputs.version }}" ]; then
-            echo "::error::include/version.h says ${header} but the tag is ${{ steps.version.outputs.version }}"
+          manifest=$(tr -d ' \r\n' < version.txt)
+          echo "tag=${{ steps.version.outputs.version }} version.h=${header} version.txt=${manifest}"
+          if [ "$header" != "${{ steps.version.outputs.version }}" ] || [ "$manifest" != "${{ steps.version.outputs.version }}" ]; then
+            echo "::error::version.h (${header}) and version.txt (${manifest}) must both equal ${{ steps.version.outputs.version }}"
             exit 1
           fi
 
@@ -66,7 +69,9 @@ jobs:
       - name: Collect release assets
         run: |
           mkdir -p dist
-          echo "${{ steps.version.outputs.version }}" > dist/version.txt
+          # The same file the firmware was built from, so the manifest and the image's app
+          # descriptor cannot drift apart.
+          cp version.txt dist/version.txt
           cp .pio/build/esp32dev/firmware.bin   dist/hydracup-esp32dev-firmware.bin
           cp .pio/build/esp32dev/littlefs.bin   dist/hydracup-esp32dev-littlefs.bin
           cp .pio/build/esp32dev/bootloader.bin dist/hydracup-esp32dev-bootloader.bin

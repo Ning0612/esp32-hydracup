@@ -69,6 +69,7 @@ private:
     void _runUpdate();
     bool _downloadAndWrite();
     bool _fetchLatestVersion(char* out, size_t outLength, int& statusCode);
+    void _releasePrimitives();
     void _setMessage(const char* format, ...);
     void _publishRunningPartition();
 

@@ -37,28 +37,33 @@ StackType_t s_taskStack[OTA_TASK_STACK_BYTES];
 
 struct ManifestCapture {
     char* buffer;
-    size_t capacity;
+    size_t capacity;  // includes the terminator; must be >= 1
     size_t length;
+    bool truncated;
 };
 
 esp_err_t captureManifest(esp_http_client_event_t* event) {
     if (event->event_id != HTTP_EVENT_ON_DATA || !event->user_data) return ESP_OK;
     auto* capture = static_cast<ManifestCapture*>(event->user_data);
-    if (capture->capacity == 0) return ESP_OK;
     const size_t room = capture->capacity - 1 - capture->length;
-    const size_t copied = std::min(room, static_cast<size_t>(event->data_len));
+    const size_t incoming = event->data_len > 0 ? static_cast<size_t>(event->data_len) : 0;
+    const size_t copied = std::min(room, incoming);
     if (copied > 0) {
         std::memcpy(capture->buffer + capture->length, event->data, copied);
         capture->length += copied;
     }
+    // Silently truncating would let a wrong or oversized body parse as a valid prefix.
+    if (copied < incoming) capture->truncated = true;
     capture->buffer[capture->length] = '\0';
     return ESP_OK;
 }
 
-// Accepts "1.2.3" with an optional leading 'v' and trailing whitespace or build metadata.
+// Accepts exactly "X.Y.Z" with at most one leading 'v'. Trailing content is rejected rather
+// than ignored: "1.2.3.4" or a manifest truncated mid-number must not read as a valid version.
 bool parseVersion(const char* text, uint32_t parts[3]) {
     if (!text) return false;
-    while (*text == ' ' || *text == 'v' || *text == 'V') ++text;
+    while (*text == ' ') ++text;
+    if (*text == 'v' || *text == 'V') ++text;
     for (int index = 0; index < 3; ++index) {
         if (*text < '0' || *text > '9') return false;
         uint32_t value = 0;
@@ -73,7 +78,14 @@ bool parseVersion(const char* text, uint32_t parts[3]) {
             ++text;
         }
     }
-    return true;
+    return *text == '\0';
+}
+
+bool sameVersion(const char* left, const char* right) {
+    uint32_t a[3] = {};
+    uint32_t b[3] = {};
+    if (!parseVersion(left, a) || !parseVersion(right, b)) return false;
+    return a[0] == b[0] && a[1] == b[1] && a[2] == b[2];
 }
 
 // Strictly greater, so a release that is older than the running build never triggers an update.
@@ -112,13 +124,22 @@ void ota_boot_check() {
 bool ota_pending_verify() { return g_pendingVerify.load(); }
 
 void ota_mark_app_valid_if_due(bool controlHealthy) {
+    static uint32_t nextAttemptMs = OTA_MARK_VALID_DELAY_MS;
     if (g_verifyResolved.load()) return;
     if (!g_pendingVerify.load()) { g_verifyResolved.store(true); return; }
-    if (hal_millis() < OTA_MARK_VALID_DELAY_MS || !controlHealthy) return;
+    if (hal_millis() < nextAttemptMs || !controlHealthy) return;
     const esp_err_t result = esp_ota_mark_app_valid_cancel_rollback();
+    if (result != ESP_OK) {
+        // Writing otadata failed, so this image really is still pending: keep retrying and
+        // keep reporting pending_verify. Claiming success here would tell the user the update
+        // is confirmed while the bootloader is still set to roll it back.
+        nextAttemptMs = hal_millis() + OTA_MARK_VALID_RETRY_MS;
+        LOG_WARN(TAG, "marking app valid failed (%s), still pending", esp_err_to_name(result));
+        return;
+    }
     g_verifyResolved.store(true);
     g_pendingVerify.store(false);
-    LOG_INFO(TAG, "app marked valid, rollback cancelled (%s)", esp_err_to_name(result));
+    LOG_INFO(TAG, "app marked valid, rollback cancelled");
 }
 
 const char* OtaUpdater::checkStateName(OtaCheckState state) {
@@ -148,6 +169,7 @@ bool OtaUpdater::init(AppState& state, RuntimeCoordinator& runtime) {
     _wake = xSemaphoreCreateBinary();
     if (!_statusMutex || !_wake) {
         LOG_ERROR(TAG, "sync primitive creation failed");
+        _releasePrimitives();
         return false;
     }
     std::snprintf(_status.runningVersion, sizeof(_status.runningVersion), "%s", APP_VERSION);
@@ -157,10 +179,16 @@ bool OtaUpdater::init(AppState& state, RuntimeCoordinator& runtime) {
                                           OTA_TASK_CORE);
     if (!_task) {
         LOG_ERROR(TAG, "worker creation failed");
+        _releasePrimitives();
         return false;
     }
     LOG_INFO(TAG, "ready version=%s partition=%s", _status.runningVersion, _status.runningPartition);
     return true;
+}
+
+void OtaUpdater::_releasePrimitives() {
+    if (_wake) { vSemaphoreDelete(_wake); _wake = nullptr; }
+    if (_statusMutex) { vSemaphoreDelete(_statusMutex); _statusMutex = nullptr; }
 }
 
 void OtaUpdater::_publishRunningPartition() {
@@ -212,8 +240,11 @@ OtaRequestResult OtaUpdater::requestUpdate() {
     if (heap_caps_get_free_size(MALLOC_CAP_INTERNAL) < OTA_MIN_FREE_HEAP_BYTES) {
         return OtaRequestResult::INSUFFICIENT_MEMORY;
     }
-    bool expected = false;
-    if (!_busy.compare_exchange_strong(expected, true)) return OtaRequestResult::BUSY;
+    bool idle = false;
+    if (!_busy.compare_exchange_strong(idle, true)) return OtaRequestResult::BUSY;
+    // Raised here rather than in _runUpdate() so the other workers start standing down while
+    // the request is still being answered, instead of after the download has already begun.
+    if (_state) _state->otaInProgress.store(true);
     _pending.store(Command::UPDATE);
     xSemaphoreGive(_wake);
     return OtaRequestResult::ACCEPTED;
@@ -234,7 +265,7 @@ void OtaUpdater::_taskLoop() {
 }
 
 bool OtaUpdater::_fetchLatestVersion(char* out, size_t outLength, int& statusCode) {
-    ManifestCapture capture{out, outLength, 0};
+    ManifestCapture capture{out, outLength, 0, false};
     out[0] = '\0';
     esp_http_client_config_t config = {};
     config.url = OTA_MANIFEST_URL;
@@ -258,6 +289,12 @@ bool OtaUpdater::_fetchLatestVersion(char* out, size_t outLength, int& statusCod
     }
     if (statusCode < 200 || statusCode >= 300) {
         LOG_WARN(TAG, "manifest fetch status=%d", statusCode);
+        return false;
+    }
+    if (capture.truncated) {
+        LOG_WARN(TAG, "manifest larger than %u bytes, refusing to parse a prefix",
+                 static_cast<unsigned>(outLength));
+        out[0] = '\0';
         return false;
     }
     trimVersionText(out);
@@ -299,6 +336,23 @@ void OtaUpdater::_runCheck() {
 }
 
 bool OtaUpdater::_downloadAndWrite() {
+    // Started before begin() so TLS handshake and redirects count against the deadline too.
+    const uint32_t startedAt = hal_millis();
+
+    // otaInProgress was raised in requestUpdate(); give in-flight cloud sync and Discord
+    // requests a moment to finish before competing with the download for heap and sockets.
+    vTaskDelay(pdMS_TO_TICKS(OTA_SETTLE_DELAY_MS));
+    if (heap_caps_get_free_size(MALLOC_CAP_INTERNAL) < OTA_MIN_FREE_HEAP_BYTES) {
+        _setMessage("可用記憶體不足，已取消更新");
+        return false;
+    }
+
+    char expected[16] = {};
+    {
+        const OtaStatus current = snapshot();
+        std::snprintf(expected, sizeof(expected), "%s", current.latestVersion);
+    }
+
     esp_http_client_config_t httpConfig = {};
     httpConfig.url = OTA_FIRMWARE_URL;
     httpConfig.crt_bundle_attach = esp_crt_bundle_attach;
@@ -317,7 +371,23 @@ bool OtaUpdater::_downloadAndWrite() {
         return false;
     }
 
-    const uint32_t startedAt = hal_millis();
+    // The manifest and the firmware asset are two separate requests against a mutable
+    // "latest" pointer, so trust the image itself: refuse anything that is not the version
+    // the check announced, and not newer than what is running. TLS and the image header
+    // prove integrity, not identity.
+    esp_app_desc_t incoming = {};
+    if (esp_https_ota_get_img_desc(handle, &incoming) != ESP_OK) {
+        esp_https_ota_abort(handle);
+        _setMessage("無法讀取韌體版本資訊，已中止");
+        return false;
+    }
+    incoming.version[sizeof(incoming.version) - 1] = '\0';
+    if (!sameVersion(incoming.version, expected) || !isNewer(incoming.version, APP_VERSION)) {
+        esp_https_ota_abort(handle);
+        _setMessage("韌體版本不符（預期 %s，實際 %s），已中止", expected, incoming.version);
+        return false;
+    }
+
     const int imageSize = esp_https_ota_get_image_size(handle);
     xSemaphoreTake(_statusMutex, portMAX_DELAY);
     _status.imageSize = imageSize > 0 ? static_cast<uint32_t>(imageSize) : 0;
@@ -366,7 +436,6 @@ void OtaUpdater::_runUpdate() {
     _status.bytesRead = 0;
     std::snprintf(_status.message, sizeof(_status.message), "開始下載韌體");
     xSemaphoreGive(_statusMutex);
-    if (_state) _state->otaInProgress.store(true);
 
     const bool ok = _downloadAndWrite();
 

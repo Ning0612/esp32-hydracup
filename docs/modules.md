@@ -361,6 +361,16 @@ worker task 參數：static stack **10,240 bytes**（不是照抄 paper-frame �
 版本檢查讀 `version.txt` 固定資產而非 `api.github.com`：後者未認證時限 60 req/hr/IP，
 家用 NAT 下多台裝置會撞牆，且需要 8 KB 靜態 buffer 解析 JSON。
 
+**版本以映像本身為準**：manifest 與韌體資產是對同一個可變的 `latest` 指標發出的兩次請求，
+之間可能不一致。因此下載開始後會先用 `esp_https_ota_get_img_desc()` 讀 app descriptor，
+必須同時滿足「等於檢查時公告的版本」與「嚴格大於目前執行版本」才繼續寫入，否則 abort。
+TLS 與 image header 只證明完整性，不證明身分。
+
+這仰賴 app descriptor 帶有可比對的版本字串：專案根目錄的 `version.txt` 是 ESP-IDF 的
+`PROJECT_VER` 來源（優先於 `git describe`），release workflow 直接把同一個檔案當成 manifest
+資產發佈，所以 manifest 與映像描述子由建置本身保證一致。`include/version.h` 則是韌體回報
+的版本，CI 會檢查兩者與 git tag 三方一致。
+
 **開機確認（獨立於本類別）**：`ota_boot_check()` / `ota_mark_app_valid_if_due(bool)` 是自由
 函式，因為未設定 WiFi 的裝置走 AP Mode、根本不會建立 `OtaUpdater`。若把確認綁在它身上
 （或綁在連線狀態上），那些裝置每次開機都會在 30 秒後被 bootloader 回滾。確認條件只有
