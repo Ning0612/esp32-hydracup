@@ -1,0 +1,4 @@
+# Layered on top of sdkconfig.defaults by the esp32dev-debug environment only.
+# Restores -Og so GDB can resolve locals and produce accurate backtraces; the
+# release environment builds with -Os to keep firmware.bin inside the 1.25 MB OTA slot.
+CONFIG_COMPILER_OPTIMIZATION_DEBUG=y
