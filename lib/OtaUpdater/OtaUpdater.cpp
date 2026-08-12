@@ -669,10 +669,21 @@ bool OtaUpdater::_updateWebfs(const char* expectedSha) {
         if (g_webfsMutex) xSemaphoreGive(g_webfsMutex);
         esp_vfs_littlefs_unregister(OTA_WEBFS_LABEL);
         unmounted = true;
-        if (esp_partition_erase_range(partition, 0, partition->size) != ESP_OK) {
-            _setMessage("webfs 分割區抹除失敗，需以 USB 重新燒錄");
-            break;
-        }
+
+        // Erase in step with the writes rather than all 384 KB up front. A full erase takes
+        // seconds and disables the flash cache in bursts while it runs, and lwIP executes
+        // from flash - the idle TLS connection opened just above does not survive it, and
+        // every subsequent read times out. That is what left the partition erased and
+        // completely unwritten. esp_ota_write() erases as it goes for the same reason.
+        size_t erased = 0;
+        const auto ensureErased = [&](size_t upTo) {
+            if (upTo <= erased) return true;
+            size_t end = (upTo + OTA_WEBFS_CHUNK - 1) & ~static_cast<size_t>(OTA_WEBFS_CHUNK - 1);
+            if (end > partition->size) end = partition->size;
+            if (esp_partition_erase_range(partition, erased, end - erased) != ESP_OK) return false;
+            erased = end;
+            return true;
+        };
 
         mbedtls_sha256_starts(&sha, 0);
         const uint32_t startedAt = hal_millis();
@@ -695,7 +706,7 @@ bool OtaUpdater::_updateWebfs(const char* expectedSha) {
             if (read == 0) break;
             pending += static_cast<size_t>(read);
             if (pending < OTA_WEBFS_CHUNK) continue;
-            if (written + pending > partition->size ||
+            if (written + pending > partition->size || !ensureErased(written + pending) ||
                 esp_partition_write(partition, written, buffer, pending) != ESP_OK) {
                 _setMessage("webfs 寫入失敗，需以 USB 重新燒錄");
                 failed = true;
@@ -716,7 +727,7 @@ bool OtaUpdater::_updateWebfs(const char* expectedSha) {
         if (pending > 0) {
             const size_t padded = (pending + 3u) & ~3u;
             std::memset(buffer + pending, 0xFF, padded - pending);
-            if (written + padded > partition->size ||
+            if (written + padded > partition->size || !ensureErased(written + padded) ||
                 esp_partition_write(partition, written, buffer, padded) != ESP_OK) {
                 _setMessage("webfs 寫入失敗，需以 USB 重新燒錄");
                 break;
@@ -727,6 +738,12 @@ bool OtaUpdater::_updateWebfs(const char* expectedSha) {
         if (!esp_http_client_is_complete_data_received(client) ||
             written != static_cast<size_t>(contentLength)) {
             _setMessage("網頁資源不完整，需以 USB 重新燒錄");
+            break;
+        }
+        // Clear whatever the old image left past the new one. Safe to do in one go now: the
+        // download is finished, so there is no idle connection left to stall.
+        if (!ensureErased(partition->size)) {
+            _setMessage("webfs 分割區抹除失敗，需以 USB 重新燒錄");
             break;
         }
 
