@@ -140,15 +140,22 @@
   <hr class="divider">
   <section id="firmware" class="card"><h2><span>08</span>韌體更新</h2>
     <p class="section-note">從 GitHub Releases 下載並寫入備用分割區，完成後自動重新開機；失敗不會影響目前韌體。網頁介面本身不隨 OTA 更新，需另以 USB 燒錄。</p>
-    <div class="split-grid"><div><div class="label">目前版本</div><div class="factor-badge" id="ota-running">--</div></div><div><div class="label">最新版本</div><div class="factor-badge" id="ota-latest">--</div></div></div>
+    <div class="metric-grid compact-grid">
+      <div class="metric"><label>目前版本</label><span id="ota-running">--</span></div>
+      <div class="metric"><label>最新版本</label><span id="ota-latest">--</span></div>
+    </div>
     <div class="actions"><button class="btn btn-secondary" id="ota-check-btn" type="button" onclick="checkFirmware()">檢查更新</button><button class="btn btn-primary" id="ota-update-btn" type="button" onclick="startFirmwareUpdate()" disabled>立即更新</button></div>
+    <div class="progress-bg" id="ota-progress" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" aria-label="韌體更新進度" style="display:none"><div class="progress-fill" id="ota-progress-fill" style="width:0%"></div></div>
     <output id="ota-status" aria-live="polite">讀取狀態中…</output>
   </section>
 
   <hr class="divider">
   <section id="calibration" class="card"><h2><span>09</span>秤重校正</h2>
     <p class="section-note">先移除所有重物歸零，再放上已知重量完成校正。</p>
-    <div class="split-grid"><div><div class="label">目前校正因子</div><div class="factor-badge" id="cur-factor">--</div></div><div><div class="label">即時重量</div><div class="weight-display-lg" id="cal-weight">-- g</div></div></div>
+    <div class="metric-grid compact-grid">
+      <div class="metric"><label>目前校正因子</label><span id="cur-factor">--</span></div>
+      <div class="metric"><label>即時重量</label><span id="cal-weight">-- g</span></div>
+    </div>
     <div class="section-title">步驟 1 / 歸零</div><div class="actions"><button class="btn btn-secondary" type="button" onclick="doTare()">執行歸零</button></div><div class="msg" id="tare-msg"></div>
     <div class="section-title">步驟 2 / 已知重量</div><div class="field"><label for="known-w">已知重量（g）</label><input type="number" id="known-w" min="1" max="5000" step="0.1" placeholder="例如 500"></div><div class="actions"><button class="btn btn-primary" type="button" onclick="doCalibrate()">完成校正</button></div><div class="msg" id="cal-msg"></div>
     <div class="card" id="cal-result" style="display:none;margin-top:1rem"><div class="label">校正結果</div><div id="cal-result-body" style="font-size:.88em;line-height:2;color:var(--muted)"></div></div>
@@ -433,9 +440,18 @@ function renderOta(d) {
   document.getElementById('ota-latest').textContent = d.latest_version || '--';
   document.getElementById('ota-check-btn').disabled = busy;
   document.getElementById('ota-update-btn').disabled = busy || d.check_state !== 'update_available';
+  const writing = d.update_state === 'downloading' || d.update_state === 'writing';
+  const percent = Math.max(0, Math.min(100, Number(d.progress_percent) || 0));
+  const bar = document.getElementById('ota-progress');
+  // Keep the bar visible at 100% once the image is written, so the last thing shown
+  // before the device reboots is a completed bar rather than an empty slot.
+  bar.style.display = writing || d.update_state === 'ready_pending_reboot' ? '' : 'none';
+  bar.setAttribute('aria-valuenow', String(percent));
+  document.getElementById('ota-progress-fill').style.width = percent + '%';
+  document.getElementById('ota-progress-fill').classList.toggle('done', d.update_state === 'ready_pending_reboot');
   let text = d.message || '尚未檢查更新。';
-  if (d.update_state === 'downloading' || d.update_state === 'writing') {
-    text = '更新中 ' + (d.progress_percent || 0) + '%';
+  if (writing) {
+    text = '更新中 ' + percent + '%';
     if (d.image_size) text += ' · ' + Math.round((d.bytes_read || 0) / 1024) + ' / ' + Math.round(d.image_size / 1024) + ' KB';
   }
   if (d.pending_verify) text += ' · 新韌體驗證中（約 30 秒），請勿重新開機';

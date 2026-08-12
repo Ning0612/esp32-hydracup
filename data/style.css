@@ -374,8 +374,6 @@ table, .log-table { width: 100%; border-collapse: collapse; background: var(--in
 th, td { padding: .62rem .65rem; border-bottom: 1px solid var(--line); text-align: left; white-space: nowrap; }
 th { background: var(--surface-2); color: var(--teal-dark); font-size: .68rem; letter-spacing: .04em; }
 tbody tr:last-child td { border-bottom: 0; }
-.weight-display-lg { padding: .7rem 0; color: var(--teal); text-align: center; font: 700 2.8rem Consolas, monospace; }
-.factor-badge { display: inline-block; padding: .3rem .55rem; border: 1px solid var(--teal); background: var(--surface-2); color: var(--teal-dark); font: 700 .85rem Consolas, monospace; }
 
 /* ── History analytics ────────────────────────────────────── */
 .history-page .history-status { margin-bottom: 1rem; }
