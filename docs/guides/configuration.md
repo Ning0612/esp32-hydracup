@@ -138,7 +138,7 @@ origin。不可附加 `/api/v1/device/sync`、其他 path、query、fragment 或
 裝置未綁定時，第一次成功同步會在同區顯示 8 碼、10 分鐘有效的「WebUI 配對碼」。
 配對完成後 server 回傳 `deviceBound=true`，裝置會清除顯示中的配對碼。完整 LINE／LIFF
 使用流程見
-[HydraCup Service 使用指南](https://github.com/Ning0612/hydracup-service/blob/main/docs/user-guide.md)。
+[HydraCup Service 使用指南](https://github.com/Ning0612/hydracup-service/blob/main/docs/user-guide.md)（`hydracup-service` 為私有 repo，需有存取權限）。
 
 Raw device token 只存在 ESP32 NVS，不會顯示在 WebUI，也不應放入 Cloudflare、repo、文件
 或訊息。Device Console 目前使用 LAN HTTP，請只在信任的隔離網路操作。
