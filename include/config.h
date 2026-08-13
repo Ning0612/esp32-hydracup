@@ -26,6 +26,12 @@
 // NVS
 #define NVS_NAMESPACE "water_config"
 
+// STA connect retries before falling back to the config portal. Worst case is
+// WIFI_STA_ATTEMPTS x timeout plus the gaps, which only applies when the network really is
+// gone - the common case is a reset where the second attempt succeeds within seconds.
+#define WIFI_STA_ATTEMPTS       3
+#define WIFI_STA_RETRY_GAP_MS   2000
+
 // AP Mode defaults
 #define AP_DEFAULT_SSID     "WaterCupTracker-Setup"
 #define AP_DEFAULT_PASSWORD "12345678"
