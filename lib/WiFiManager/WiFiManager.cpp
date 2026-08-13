@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cstring>
 
+#include "config.h"
 #include "esp_event.h"
 #include "esp_netif.h"
 #include "esp_wifi.h"
@@ -41,18 +42,34 @@ bool WiFiManager::connectSTA(const std::string& ssid, const std::string& passwor
     std::strncpy(reinterpret_cast<char*>(config.sta.ssid), ssid.c_str(), sizeof(config.sta.ssid));
     std::strncpy(reinterpret_cast<char*>(config.sta.password), password.c_str(), sizeof(config.sta.password));
     config.sta.threshold.authmode = WIFI_AUTH_OPEN;
-    if (esp_wifi_set_config(WIFI_IF_STA, &config) != ESP_OK ||
-        esp_wifi_start() != ESP_OK || esp_wifi_connect() != ESP_OK) return false;
-
-    const uint32_t start = hal_millis();
-    while (!_connected && hal_millis() - start <= timeoutMs) hal_delay_ms(200);
-    if (!_connected) {
-        esp_wifi_disconnect();
-        LOG_WARN(TAG, "STA connection timed out");
+    if (esp_wifi_set_config(WIFI_IF_STA, &config) != ESP_OK || esp_wifi_start() != ESP_OK)
         return false;
+
+    // Retry rather than fall back to the config portal on the first timeout. After a reset the
+    // access point has usually not released the previous association yet, so one 10 s attempt
+    // routinely fails on a network that is perfectly reachable a few seconds later - and every
+    // such fallback costs a manual reset, which during an OTA can roll the new firmware back
+    // before it has been confirmed.
+    for (uint8_t attempt = 1; attempt <= WIFI_STA_ATTEMPTS; ++attempt) {
+        if (esp_wifi_connect() == ESP_OK) {
+            const uint32_t start = hal_millis();
+            while (!_connected && hal_millis() - start <= timeoutMs) hal_delay_ms(200);
+            if (_connected) {
+                LOG_INFO(TAG, "connected: %s (attempt %u)", getIP().c_str(),
+                         static_cast<unsigned>(attempt));
+                return true;
+            }
+        }
+        esp_wifi_disconnect();
+        if (attempt < WIFI_STA_ATTEMPTS) {
+            LOG_WARN(TAG, "STA attempt %u/%u timed out, retrying", static_cast<unsigned>(attempt),
+                     static_cast<unsigned>(WIFI_STA_ATTEMPTS));
+            hal_delay_ms(WIFI_STA_RETRY_GAP_MS);
+        }
     }
-    LOG_INFO(TAG, "connected: %s", getIP().c_str());
-    return true;
+    LOG_WARN(TAG, "STA connection failed after %u attempts",
+             static_cast<unsigned>(WIFI_STA_ATTEMPTS));
+    return false;
 }
 
 bool WiFiManager::startAP(const std::string& ssid, const std::string& password) {
