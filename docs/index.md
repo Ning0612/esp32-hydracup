@@ -34,8 +34,8 @@ ESP32 智慧水杯追蹤器完整文件索引。
 
 ## LINE／LIFF 雲端服務
 
-- [HydraCup Service 使用指南](https://github.com/Ning0612/hydracup-service/blob/main/docs/user-guide.md) — Cloud sync、配對、歷史補傳與 LIFF 操作
-- [HydraCup Service v1 協定](https://github.com/Ning0612/hydracup-service/blob/main/docs/protocol.md) — 裝置同步、command／ACK 與歷史查詢合約
+- [HydraCup Service 使用指南](https://github.com/Ning0612/hydracup-service/blob/main/docs/user-guide.md)（`hydracup-service` 為私有 repo，需有存取權限） — Cloud sync、配對、歷史補傳與 LIFF 操作
+- [HydraCup Service v1 協定](https://github.com/Ning0612/hydracup-service/blob/main/docs/protocol.md)（`hydracup-service` 為私有 repo，需有存取權限） — 裝置同步、command／ACK 與歷史查詢合約
 
 韌體 `v0.5.0` 與 service protocol v1 是目前驗證組合。ESP32 保留 Local 月檔並作為飲水事件與
 提醒狀態的唯一真實來源；LIFF 顯示已同步事件及使用者主動執行的歷史補傳資料。

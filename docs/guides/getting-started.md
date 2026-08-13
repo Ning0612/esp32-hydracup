@@ -86,7 +86,7 @@ pio run -e esp32dev -v -t uploadfs | Select-String address
 
 這個步驟需要 HydraCup firmware `v0.5.0` 以上、已部署的獨立 `hydracup-service`、已設定的裝置 allowlist，以及可用的
 LINE Login／Messaging API channel。完整的使用與配對流程見
-[HydraCup Service 使用指南](https://github.com/Ning0612/hydracup-service/blob/main/docs/user-guide.md)。
+[HydraCup Service 使用指南](https://github.com/Ning0612/hydracup-service/blob/main/docs/user-guide.md)（`hydracup-service` 為私有 repo，需有存取權限）。
 
 1. 登入 `http://<裝置 IP>/settings`
 2. 在「Cloud sync」勾選「啟用 HTTPS 同步」

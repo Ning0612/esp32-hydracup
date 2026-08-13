@@ -384,6 +384,26 @@ webfs 沒有 A/B 備援也放不進 RAM，寫入是就地覆蓋，中途失敗�
 寫入成功就一定重新開機，即使 webfs 失敗。不改用「直接雜湊分割區」判斷是否需要更新，因為
 LittleFS 執行期間會改寫 metadata，實際位元組會與發佈映像產生落差。
 
+**webfs OTA 的三個缺陷（v0.7.0–v0.7.7）**：這條路徑從加入到真正可用之間修了三次，而且只能
+一層一層剝——每一層都被前一層擋住，前一層沒修好就看不見下一層：
+
+| 缺陷 | 修正於 | 症狀 |
+|---|---|---|
+| 串流路徑不跟隨 302 轉址 | v0.7.2 | 下載從未開始。`esp_http_client` 只在 `esp_http_client_perform()` 內處理轉址，而邊下載邊寫必須用 `open()`／`fetch_headers()`／`read()`，那條路徑會把 GitHub 的 302 原樣回傳。實測需要**兩層**轉址 |
+| 寫入前先抹除整片分割區 | v0.7.4 | 抹除 384 KB 需數秒且反覆停用 flash cache，而 lwIP 執行於 flash——剛建立的 TLS 連線在這段期間無人服務，抹完回頭讀已全部逾時。分割區被抹空卻零寫入 |
+| 緩衝區配置在 IRAM | **v0.7.7** | **真正的主因。**`MALLOC_CAP_INTERNAL` 只保證「非 PSRAM、cache 關閉時仍可用」，IRAM 完全符合卻只允許 32-bit 對齊存取，第一筆資料 `memcpy` 進去就 `LoadStoreError` panic |
+
+panic 發生在 `esp_https_ota_finish()` 之後，開機分割區已切換，因此韌體照常更新、從外部看就是
+「韌體燒完就重開」。診斷靠的是 serial 擷取到的暫存器 dump：`EXCVADDR` 落在 IRAM、長度 `0x1000`
+正是 `OTA_WEBFS_CHUNK`、`PC` 在 ROM memcpy。
+
+v0.7.6 曾推測為 OTA task stack 不足而由 10 KB 提高到 16 KB，**那不是原因**——修好之後的 log
+顯示 `stack_free=11178`，16 KB 還剩 11 KB。該值保留為餘裕。
+
+姊妹專案 esp32-paper-frame **沒有 webfs OTA**（`components/pf_ota/ota_worker_esp_idf.cpp` 註明
+`webfs/imagefs are never touched here`），其網頁資源僅能以 esptool 手動燒錄。上述三個缺陷都是
+本專案新增此功能後才出現的，沒有既有實作可對照。
+
 **開機確認（獨立於本類別）**：`ota_boot_check()` / `ota_mark_app_valid_if_due(bool)` 是自由
 函式，因為未設定 WiFi 的裝置走 AP Mode、根本不會建立 `OtaUpdater`。若把確認綁在它身上
 （或綁在連線狀態上），那些裝置每次開機都會在 30 秒後被 bootloader 回滾。確認條件只有
